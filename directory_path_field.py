@@ -16,8 +16,10 @@ class DirectoryPathField(QWidget):
     Each field is (Label + QLineEdit + Browse button).
     If `name` is a list, multiple fields are stacked vertically.
 
-    The browse button can be hidden via browse_enabled=False,
-    but the layout remains identical (no shift).
+    Layout contract intentionally matches FilePathField:
+      - Label: Fixed
+      - LineEdit: Expanding (with minimum width)
+      - Button: Fixed
     """
     pathChanged = pyqtSignal(str)
 
@@ -27,7 +29,7 @@ class DirectoryPathField(QWidget):
         path: str | Sequence[str] = "",
         *,
         label_width: int = 120,
-        field_width: int = 300,
+        field_width: int = 500,
         button_size: int = 28,
         dialog_title: str = "Select directory",
         dialog_width: int = 600,
@@ -60,25 +62,38 @@ class DirectoryPathField(QWidget):
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(8)
 
+            # Label (fixed)
             label = QLabel(nm, self)
             if label_width > 0:
                 label.setFixedWidth(label_width)
+            label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
+            # Line edit (EXPANDING, matches FilePathField)
             edit = QLineEdit(self)
             edit.setText(p)
             if field_width > 0:
-                edit.setFixedWidth(field_width)
+                edit.setMinimumWidth(field_width)
+            edit.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Fixed
+            )
 
+            # Browse button (fixed)
             btn = QPushButton(self)
+            btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             if button_size > 0:
                 btn.setFixedSize(QSize(button_size, button_size))
+
             icon_path = os.path.join("images", "folder_open.svg")
             if os.path.exists(icon_path):
                 btn.setIcon(QIcon(icon_path))
-                btn.setIconSize(QSize(max(1, button_size - 2), max(1, button_size - 2)))
+                btn.setIconSize(
+                    QSize(max(1, button_size - 2), max(1, button_size - 2))
+                )
             else:
                 btn.setText("...")
-            btn.setVisible(browse_enabled)  # keep layout, hide if not needed
+
+            btn.setEnabled(browse_enabled)
 
             row.addWidget(label)
             row.addWidget(edit)
@@ -91,9 +106,15 @@ class DirectoryPathField(QWidget):
             edit.textChanged.connect(self.pathChanged.emit)
 
         self.setLayout(outer_layout)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed
+        )
 
-    # --- accessors ---
+    # --------------------------------------------------
+    # Accessors
+    # --------------------------------------------------
+
     @property
     def names(self) -> list[str]:
         return [lbl.text() for lbl, _, _ in self._fields]
@@ -118,8 +139,15 @@ class DirectoryPathField(QWidget):
     def path(self, p: str) -> None:
         self._fields[0][1].setText(p)
 
-    # --- XML helpers ---
-    def to_xml(self, root_tag: str | None = None, attr_label: str | None = None) -> ET.Element:
+    # --------------------------------------------------
+    # XML helpers
+    # --------------------------------------------------
+
+    def to_xml(
+        self,
+        root_tag: str | None = None,
+        attr_label: str | None = None
+    ) -> ET.Element:
         if len(self._fields) == 1:
             safe_tag = root_tag or self._sanitize_tag(self.name)
             el = ET.Element(safe_tag)
@@ -127,15 +155,15 @@ class DirectoryPathField(QWidget):
             if attr_label:
                 el.set(attr_label, self.name)
             return el
-        else:
-            root = ET.Element(root_tag or "directories")
-            for lbl, edit, _ in self._fields:
-                child = ET.Element(self._sanitize_tag(lbl.text()))
-                child.text = edit.text()
-                if attr_label:
-                    child.set(attr_label, lbl.text())
-                root.append(child)
-            return root
+
+        root = ET.Element(root_tag or "directories")
+        for lbl, edit, _ in self._fields:
+            child = ET.Element(self._sanitize_tag(lbl.text()))
+            child.text = edit.text()
+            if attr_label:
+                child.set(attr_label, lbl.text())
+            root.append(child)
+        return root
 
     def to_xml_string(self, **kwargs) -> str:
         el = self.to_xml(**kwargs)
@@ -146,28 +174,22 @@ class DirectoryPathField(QWidget):
             lbl, edit, _ = self._fields[0]
             tag = self._sanitize_tag(lbl.text())
 
-            # ✅ Case 1: element *is* the field itself
             if element.tag.lower() == tag.lower():
-                if element.text is not None:
+                if element.text:
                     edit.setText(element.text.strip())
                 return
 
-        # ✅ Case 2: element is the parent
             child = element.find(tag)
-            if child is not None and child.text is not None:
+            if child is not None and child.text:
                 edit.setText(child.text.strip())
+            return
 
-        else:
-            paths: list[str] = []
-            for lbl, edit, _ in self._fields:
-                tag = self._sanitize_tag(lbl.text())
-                child = element.find(tag)
-                if child is not None and child.text is not None:
-                    paths.append(child.text.strip())
-                else:
-                    paths.append("")
-            self.set_paths(paths)
-
+        paths: list[str] = []
+        for lbl, edit, _ in self._fields:
+            tag = self._sanitize_tag(lbl.text())
+            child = element.find(tag)
+            paths.append(child.text.strip() if child is not None and child.text else "")
+        self.set_paths(paths)
 
     @staticmethod
     def _sanitize_tag(label: str) -> str:
@@ -177,10 +199,14 @@ class DirectoryPathField(QWidget):
             s = "d_" + (s or "directory")
         return s
 
-    # --- browsing ---
+    # --------------------------------------------------
+    # Browsing
+    # --------------------------------------------------
+
     def _browse(self, edit: QLineEdit) -> None:
         if not self._browse_enabled:
             return
+
         dlg = QFileDialog(self, self._dialog_title)
         dlg.setOption(QFileDialog.Option.DontUseNativeDialog, True)
         dlg.setFileMode(QFileDialog.FileMode.Directory)
@@ -193,19 +219,17 @@ class DirectoryPathField(QWidget):
                 edit.setText(dirs[0])
 
 
-# --- demo ---
+# --------------------------------------------------
+# Demo
+# --------------------------------------------------
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = DirectoryPathField(
         "Working directory",
         path="/tmp",
-        browse_enabled=False,  # hidden button, but layout same
+        browse_enabled=False,
     )
     w.setWindowTitle("DirectoryPathField — Demo")
     w.show()
-
-    def _about_to_quit():
-        print("XML output:\n", w.to_xml_string(attr_label="label"))
-
-    app.aboutToQuit.connect(_about_to_quit)
     sys.exit(app.exec())

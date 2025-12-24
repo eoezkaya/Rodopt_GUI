@@ -1,6 +1,6 @@
 # constraint_function_widget.py
 from __future__ import annotations
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QApplication,
@@ -15,20 +15,11 @@ from string_options_field import StringOptionsField
 from file_path_field import FilePathField
 from directory_path_field import DirectoryPathField
 from remote_server_widget import RemoteServerWidget
-from constraint_definition import ConstraintDefinition
 
 
 class ConstraintFunction(QWidget):
     """
     Widget for configuring a Constraint Function.
-
-    Fields:
-      - Name
-      - Host (local or remote)
-      - Definition (ConstraintDefinition)
-      - Executable / Training / Design / Output files
-      - Working directory (local or remote)
-      - RemoteServerWidget (visible only when host == remote)
     """
 
     changed = pyqtSignal()
@@ -43,21 +34,29 @@ class ConstraintFunction(QWidget):
     ):
         super().__init__(parent)
 
-        # --- Defaults ---
+        # --------------------------------------------------
+        # Defaults
+        # --------------------------------------------------
         self._default_name = "ConstraintFunction"
-        self._default_host = "local host"
+        self._default_execution_location = "local"
         self._default_paths = ["", "", "", ""]
         self._default_workdir = os.getcwd()
 
-        # --- Main container ---
+        # --------------------------------------------------
+        # Group box
+        # --------------------------------------------------
         self.group_box = QGroupBox("Constraint Function", self)
-        # Give the group box a wider initial width to prevent horizontal stretching
-        approx_width = label_width + field_width + 230  # small margin for spacing/buttons
+        approx_width = label_width + field_width + 230
         self.group_box.setMinimumWidth(approx_width)
         self.group_box.setMaximumWidth(approx_width + 230)
-        self.group_box.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self.group_box.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed
+        )
 
-        # --- Fields ---
+        # --------------------------------------------------
+        # Fields
+        # --------------------------------------------------
         self.name_field = StringField(
             "Name",
             default=self._default_name,
@@ -66,25 +65,28 @@ class ConstraintFunction(QWidget):
             parent=self.group_box,
         )
 
-        self.host_field = StringOptionsField(
-            "Host",
-            value=self._default_host,
-            options=["local host", "remote host"],
+        self.execution_location_field = StringOptionsField(
+            "Execution location",
+            value=self._default_execution_location,
+            options=["local", "remote"],
             label_width=label_width,
             field_width=field_width,
             parent=self.group_box,
         )
 
-        self.definition_field = ConstraintDefinition(
+        self.definition_field = StringField(
             "Definition",
-            default="",  # no default text, widget handles its own placeholder
+            default="> 0.0",
             label_width=label_width,
             field_width=field_width,
             parent=self.group_box,
         )
 
         self.file_fields = FilePathField(
-            ["Executable file name", "Training data file", "Design variables file", "Output file"],
+            ["Executable file name",
+             "Training data file",
+             "Design variables file",
+             "Output file"],
             path=list(self._default_paths),
             select_mode="open_file",
             dialog_title="Select File",
@@ -107,6 +109,11 @@ class ConstraintFunction(QWidget):
             parent=self.group_box,
         )
 
+        if hasattr(self.working_dir_field, "layout"):
+            self.working_dir_field.layout().setAlignment(
+                Qt.AlignmentFlag.AlignLeft
+            )
+
         self.remote_server_widget = RemoteServerWidget(
             label_width=label_width,
             field_width=field_width,
@@ -117,28 +124,21 @@ class ConstraintFunction(QWidget):
         self.clear_button = QPushButton("Clear", self.group_box)
         self.clear_button.clicked.connect(self.clear_fields)
 
-        # --- Layout setup ---
+        # --------------------------------------------------
+        # Layout
+        # --------------------------------------------------
         inner_layout = QVBoxLayout(self.group_box)
         inner_layout.setContentsMargins(8, 16, 8, 8)
         inner_layout.setSpacing(5)
-        inner_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        inner_layout.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
 
         inner_layout.addWidget(self.name_field)
-        inner_layout.addWidget(self.host_field)
+        inner_layout.addWidget(self.execution_location_field)
         inner_layout.addWidget(self.definition_field)
-
-        # Fix alignment for file_fields
-        self.file_fields.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         inner_layout.addWidget(self.file_fields)
-        if hasattr(self.file_fields, "layout"):
-            self.file_fields.layout().setAlignment(Qt.AlignmentFlag.AlignLeft)
-
-        # Fix alignment for working_dir_field
-        self.working_dir_field.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         inner_layout.addWidget(self.working_dir_field)
-        if hasattr(self.working_dir_field, "layout"):
-            self.working_dir_field.layout().setAlignment(Qt.AlignmentFlag.AlignLeft)
-
         inner_layout.addWidget(self.remote_server_widget)
 
         btn_row = QHBoxLayout()
@@ -146,202 +146,172 @@ class ConstraintFunction(QWidget):
         btn_row.addWidget(self.clear_button)
         inner_layout.addLayout(btn_row)
 
-        self.group_box.setLayout(inner_layout)
-        self.group_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
         outer_layout = QVBoxLayout(self)
         outer_layout.addWidget(self.group_box)
-        outer_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        outer_layout.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
         self.setLayout(outer_layout)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
-        # --- Signals ---
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed
+        )
+
+        # --------------------------------------------------
+        # Signals
+        # --------------------------------------------------
         self.name_field.textChanged.connect(self.changed.emit)
-        self.host_field.valueChanged.connect(self._on_host_changed)
-        self.definition_field.textChanged.connect(self.changed.emit)
+        self.execution_location_field.valueChanged.connect(
+            self._on_execution_location_changed
+        )
+        self.definition_field.textChanged.connect(self._on_definition_changed)
+
         if hasattr(self.file_fields, "pathChanged"):
             self.file_fields.pathChanged.connect(lambda _: self.changed.emit())
+
         self.working_dir_field.pathChanged.connect(lambda _: self.changed.emit())
         self.remote_server_widget.changed.connect(self.changed.emit)
 
-    # ==============================================================
-    # Core methods
-    # ==============================================================
+        # initial validation
+        self._on_definition_changed(self.definition_field.text)
+
+    # ==================================================
+    # Validation
+    # ==================================================
+
+    def _is_valid_definition(self, text: str) -> bool:
+        text = text.strip()
+        if not text:
+            return False
+        pattern = r'^[<>]\s*[+-]?\d+(\.\d+)?$'
+        return re.match(pattern, text) is not None
+
+    def _on_definition_changed(self, text: str) -> None:
+        valid = self._is_valid_definition(text)
+        self.definition_field.set_valid(
+            valid,
+            tooltip="Expected format: > 10.0 or < -3"
+        )
+        self.changed.emit()
+
+    # ==================================================
+    # Core logic
+    # ==================================================
 
     def clear_fields(self) -> None:
         self.name_field.text = self._default_name
-        self.host_field.value = self._default_host
+        self.execution_location_field.value = self._default_execution_location
         self.definition_field.text = ""
         self.file_fields.set_paths(list(self._default_paths))
         self.working_dir_field.path = self._default_workdir
         self.remote_server_widget.setVisible(False)
-        self.remote_server_widget.set_values(hostname="", username="", port="22")
+        self.remote_server_widget.set_values(
+            hostname="", username="", port="22"
+        )
         self.changed.emit()
 
-    # --------------------------------------------------------------
     def snapshot(self) -> Dict[str, str | Dict[str, str]]:
         paths = self.file_fields.paths
-        definition_raw = self.definition_field.text.strip()
         data: Dict[str, str | Dict[str, str]] = {
             "name": self.name_field.text.strip(),
-            "host": self.host_field.value.strip(),
-            "definition": definition_raw,
+            "execution_location": self.execution_location_field.value.strip(),
+            "definition": self.definition_field.text.strip(),
             "executable_filename": paths[0],
             "training_data_filename": paths[1],
             "design_vector_filename": paths[2],
             "output_filename": paths[3],
             "working_directory": self.working_dir_field.path.strip(),
         }
-        if self.host_field.value.lower() == "remote host":
+        if self.execution_location_field.value.lower() == "remote":
             data["remote_server"] = self.remote_server_widget.snapshot()
         return data
 
-    # --------------------------------------------------------------
+    # ==================================================
+    # XML
+    # ==================================================
 
-    def to_xml(
-        self,
-        *,
-        root_tag: str = "constraint_function",
-        include_empty: bool = False,
-        label_attr: str = ""  # accepted but ignored
-    ) -> ET.Element:
-        """
-        Serialize the constraint function to XML.
-    
-        - root_tag is forced lowercase "constraint_function"
-        - include_empty=True → also creates empty tags
-        - label_attr is accepted for compatibility but ignored
-        """
-        root_tag = "constraint_function"  # enforce lowercase tag name
-        root = ET.Element(root_tag)
-    
-        # Helper: add tag only if non-empty or include_empty=True
-        def add_tag(tag: str, text: str):
+    def to_xml(self, *, include_empty: bool = False) -> ET.Element:
+        root = ET.Element("constraint_function")
+
+        def add(tag: str, text: str):
             if text or include_empty:
                 ET.SubElement(root, tag).text = text
-    
-        # --- Basic info ---
-        add_tag("name", self.name_field.text.strip())
-        add_tag("host", self.host_field.value.strip())
-    
-        # --- Constraint definition ---
+
+        add("name", self.name_field.text.strip())
+        add("execution_location", self.execution_location_field.value.strip())
+
         s = self.definition_field.text.strip()
-        if s:
-            m = re.match(r'^(>=|<=|>|<|==|!=)\s*(-?\d+(\.\d+)?)$', s)
-            if m:
-                op, val = m.group(1), m.group(2)
-                op_map = {">": "gt", ">=": "ge", "<": "lt", "<=": "le", "==": "eq", "!=": "ne"}
-                add_tag("constraint_type", op_map.get(op, op))
-                add_tag("constraint_value", val)
-            elif include_empty:
-                add_tag("constraint_type", "")
-                add_tag("constraint_value", "")
-        elif include_empty:
-            add_tag("constraint_type", "")
-            add_tag("constraint_value", "")
-    
-        # --- File paths ---
-        paths = self.file_fields.paths
+        if self._is_valid_definition(s):
+            m = re.match(r'^([<>])\s*([+-]?\d+(\.\d+)?)$', s)
+            op, val = m.group(1), m.group(2)
+            add("constraint_type", "gt" if op == ">" else "lt")
+            add("constraint_value", val)
+
         tags = [
             "executable_filename",
             "training_data_filename",
             "design_vector_filename",
             "output_filename",
         ]
-        for tag, val in zip(tags, paths):
-            add_tag(tag, val.strip())
-    
-        # --- Working directory / remote server ---
-        wd = self.working_dir_field.path.strip()
-        host_lower = self.host_field.value.lower()
+        for tag, val in zip(tags, self.file_fields.paths):
+            add(tag, val.strip())
 
-        # always save working directory as <working_directory>
-        add_tag("working_directory", wd)
+        add("working_directory", self.working_dir_field.path.strip())
 
-        # if remote host, also append <remote_server> block
-        if host_lower == "remote host" and self.remote_server_widget is not None:
-            rs_el = self.remote_server_widget.to_xml("remote_server")
-            root.append(rs_el)
+        if self.execution_location_field.value.lower() == "remote":
+            root.append(self.remote_server_widget.to_xml("remote_server"))
 
         return root
 
-
-  
-
-    def to_xml_string(self, **kwargs) -> str:
-        el = self.to_xml(**kwargs)
-        xml_bytes = ET.tostring(el, encoding="utf-8")
-        import xml.dom.minidom as minidom
-        parsed = minidom.parseString(xml_bytes)
-        pretty = parsed.toprettyxml(indent="  ")
-        return "\n".join(
-            line for line in pretty.splitlines()
-            if line.strip() and not line.strip().startswith("<?xml")
-        )
-
-    # --------------------------------------------------------------
     def from_xml(self, element: ET.Element) -> None:
-        """
-        Load constraint function fields from simplified lowercase XML.
-        """
         def get(tag: str) -> str:
             el = element.find(tag)
             return el.text.strip() if el is not None and el.text else ""
 
         self.name_field.text = get("name") or self._default_name
-        host = get("host") or self._default_host
-        self.host_field.value = host
-        self.remote_server_widget.setVisible(host.lower() == "remote host")
+        loc = get("execution_location") or self._default_execution_location
+        self.execution_location_field.value = loc
+        self.remote_server_widget.setVisible(loc.lower() == "remote")
 
-        # Constraint definition
         ctype = get("constraint_type")
         cval = get("constraint_value")
         if ctype and cval:
-            op_map = {"gt": ">", "ge": ">=", "lt": "<", "le": "<=", "eq": "==", "ne": "!="}
-            self.definition_field.text = f"{op_map.get(ctype.strip().lower(), ctype)} {cval}"
+            self.definition_field.text = (
+                (">" if ctype == "gt" else "<") + " " + cval
+            )
 
-        # Files
-        paths = [
+        self.file_fields.set_paths([
             get("executable_filename"),
             get("training_data_filename"),
             get("design_vector_filename"),
             get("output_filename"),
-        ]
-        self.file_fields.set_paths(paths)
+        ])
 
-        # Working directory (local or remote)
-        wd = get("working_directory") or get("remote_working_directory")
+        wd = get("working_directory")
         if wd:
             self.working_dir_field.path = wd
 
-        # Remote server section
         rs_el = element.find("remote_server")
         if rs_el is not None:
             self.remote_server_widget.from_xml(rs_el)
             self.remote_server_widget.setVisible(True)
 
-    # --------------------------------------------------------------
-    def _on_host_changed(self, value: str) -> None:
-        is_remote = value.strip().lower() == "remote host"
-        self.remote_server_widget.setVisible(is_remote)
+        self._on_definition_changed(self.definition_field.text)
+
+    # --------------------------------------------------
+    def _on_execution_location_changed(self, value: str) -> None:
+        self.remote_server_widget.setVisible(
+            value.strip().lower() == "remote"
+        )
         self.changed.emit()
 
 
-# ---------------- Demo ----------------
+# --------------------------------------------------
+# Demo
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    w = ConstraintFunction(label_width=180, field_width=360, button_size=32)
+    w = ConstraintFunction()
     w.setWindowTitle("ConstraintFunction — Demo")
     w.show()
-
-    def _about_to_quit():
-        print("Snapshot:", w.snapshot())
-        print("XML:")
-        xml = w.to_xml_string()
-        print(xml)
-        el = ET.fromstring(xml)
-        w.from_xml(el)
-        print("Reloaded Snapshot:", w.snapshot())
-
-    app.aboutToQuit.connect(_about_to_quit)
     sys.exit(app.exec())

@@ -1,3 +1,4 @@
+# objective_function_widget.py
 from __future__ import annotations
 from typing import Optional, Dict
 
@@ -91,7 +92,7 @@ class ObjectiveFunction(QWidget):
         )
         self.derivative_info_field.hide()
 
-        # --- File paths (ordered) ---
+        # --- File paths ---
         self.exec_file = FilePathField(
             "Executable file name",
             path="",
@@ -157,22 +158,6 @@ class ObjectiveFunction(QWidget):
         )
 
         # ------------------------------------------------------------
-        # Normalize layout behavior (prevents indentation drift)
-        # ------------------------------------------------------------
-        for w in (
-            self.exec_file,
-            self.grad_exec_file,
-            self.training_file,
-            self.design_file,
-            self.output_file,
-            self.grad_output_file,
-            self.working_dir_field,
-        ):
-            w.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            if hasattr(w, "layout"):
-                w.layout().setAlignment(Qt.AlignmentFlag.AlignLeft)
-
-        # ------------------------------------------------------------
         # Remote server
         # ------------------------------------------------------------
         self.remote_server_widget = RemoteServerWidget(
@@ -216,18 +201,25 @@ class ObjectiveFunction(QWidget):
         btn_row.addWidget(self.clear_button)
         inner.addLayout(btn_row)
 
-        self.group_box.setLayout(inner)
-
         outer = QVBoxLayout(self)
         outer.addWidget(self.group_box)
         self.setLayout(outer)
+
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed
+        )
 
         # ------------------------------------------------------------
         # Signals
         # ------------------------------------------------------------
         self.name_field.textChanged.connect(self.changed.emit)
-        self.execution_location_field.valueChanged.connect(self._on_execution_location_changed)
-        self.derivative_info_field.valueChanged.connect(self._on_derivative_info_changed)
+        self.execution_location_field.valueChanged.connect(
+            self._on_execution_location_changed
+        )
+        self.derivative_info_field.valueChanged.connect(
+            self._on_derivative_info_changed
+        )
 
         for w in (
             self.exec_file,
@@ -280,7 +272,9 @@ class ObjectiveFunction(QWidget):
 
         self.working_dir_field.path = self._default_workdir
         self.remote_server_widget.setVisible(False)
-        self.remote_server_widget.set_values(hostname="", username="", port="22")
+        self.remote_server_widget.set_values(
+            hostname="", username="", port="22"
+        )
         self.changed.emit()
 
     # ==============================================================
@@ -344,7 +338,9 @@ class ObjectiveFunction(QWidget):
             return el.text.strip() if el is not None and el.text else ""
 
         self.name_field.text = get("name") or self._default_name
-        self.execution_location_field.value = get("execution_location") or self._default_execution_location
+        self.execution_location_field.value = (
+            get("execution_location") or self._default_execution_location
+        )
 
         if (di := get("derivative_information")):
             self.derivative_info_field.value = di

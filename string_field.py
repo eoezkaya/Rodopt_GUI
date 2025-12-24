@@ -122,6 +122,16 @@ class StringField(QWidget):
         if not s or s[0].isdigit():
             s = "f_" + (s or "field")
         return s
+    def set_valid(self, valid: bool, tooltip: str = "") -> None:
+    
+        if valid:
+            self._edit.setStyleSheet("")
+            self._edit.setToolTip("")
+        else:
+            self._edit.setStyleSheet(
+                "QLineEdit { border: 2px solid #c0392b; }"
+            )
+            self._edit.setToolTip(tooltip)
 
 
 # ----------------------------------------------------------
