@@ -106,6 +106,8 @@ class Study(QWidget):
         self._int_field_width = int_field_width
         self._button_size = button_size
         self._dirty = False
+        self._study_path: str | None = None
+        self._study_filename: str = "MyStudy.xml"
 
         # ------------------------------------------------------------
         # Init
@@ -191,7 +193,14 @@ class Study(QWidget):
         )
         obj.name_field.textChanged.connect(self._mark_dirty)
 
+        # add tab first (with internal key)
         self._add_tab(obj, key, align_top=True, closable=True)
+
+        # immediately set the visible label to "ObjectiveFunction"
+        idx_tab = self.tabs.indexOf(self._widgets[key])
+        if idx_tab != -1:
+            self.tabs.setTabText(idx_tab, "ObjectiveFunction")
+
         self._propagate_problem_type()
         self.tabs.setCurrentWidget(self._widgets[key])
 
@@ -266,18 +275,27 @@ class Study(QWidget):
         self.tabs.clear()
         self._widgets.clear()
         self._dirty = False
+        self._set_study_path(None)
 
         self._add_core_tabs()
         self._add_objective_tab()
         self._setup_sync()
 
     def _save_to_file(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Save XML", "", "XML Files (*.xml)")
+        # if a file was already loaded/saved, use that; otherwise "MyStudy.xml"
+        default_path = self._study_path or self._study_filename
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save XML",
+            default_path,
+            "XML Files (*.xml)",
+        )
         if not path:
             return
         with open(path, "w", encoding="utf-8") as f:
             f.write(self.to_xml_string())
         self._dirty = False
+        self._set_study_path(path)
 
     def _load_from_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Load XML", "", "XML Files (*.xml)")
@@ -307,6 +325,7 @@ class Study(QWidget):
 
         self._propagate_problem_type()
         self._dirty = False
+        self._set_study_path(path)
 
     # ==============================================================
     # RUN
@@ -374,6 +393,13 @@ class Study(QWidget):
 
     def _mark_dirty(self, *args):
         self._dirty = True
+
+    def _set_study_path(self, path: Optional[str]) -> None:
+        self._study_path = path
+        if path:
+            self._study_filename = os.path.basename(path)
+        else:
+            self._study_filename = "MyStudy.xml"
 
     def _setup_sync(self) -> None:
         gs = self._widgets["General Settings"]._child

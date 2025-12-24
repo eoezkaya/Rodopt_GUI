@@ -254,13 +254,15 @@ class ConstraintFunction(QWidget):
         # --- Working directory / remote server ---
         wd = self.working_dir_field.path.strip()
         host_lower = self.host_field.value.lower()
-        if host_lower == "remote host":
-            add_tag("remote_working_directory", wd)
-            rs_el = self.remote_server_widget.to_xml(root_tag="remote_server")
+
+        # always save working directory as <working_directory>
+        add_tag("working_directory", wd)
+
+        # if remote host, also append <remote_server> block
+        if host_lower == "remote host" and self.remote_server_widget is not None:
+            rs_el = self.remote_server_widget.to_xml("remote_server")
             root.append(rs_el)
-        else:
-            add_tag("working_directory", wd)
-    
+
         return root
 
 

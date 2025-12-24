@@ -40,28 +40,28 @@ class RemoteServerWidget(QWidget):
 
         # --- fields ---
         self.hostname_field = StringField(
-            "host",
+            "Host",                      # was "host"
             default=default_hostname,
             label_width=label_width,
             field_width=field_width,
             parent=self.group_box,
         )
         self.username_field = StringField(
-            "user",
+            "User",                      # was "user"
             default=default_username,
             label_width=label_width,
             field_width=field_width,
             parent=self.group_box,
         )
         self.port_field = StringField(
-            "port",
+            "Port",                      # was "port"
             default=default_port,
             label_width=label_width,
             field_width=field_width,
             parent=self.group_box,
         )
         self.working_dir_field = DirectoryPathField(
-            "remote working directory",
+            "Remote working directory",  # capitalize as desired
             path=default_working_dir,
             label_width=label_width,
             field_width=field_width,
@@ -187,9 +187,20 @@ class RemoteServerWidget(QWidget):
         return ET.tostring(el, encoding="utf-8").decode("utf-8")
 
     def from_xml(self, element: ET.Element) -> None:
+        """
+        Load remote server settings from XML:
+
+        <remote_server>
+          <hostname>...</hostname>
+          <username>...</username>
+          <port>22</port>
+          <remote_working_directory>/path</remote_working_directory>
+        </remote_server>
+        """
         tag_to_widget = {
-            "host": self.hostname_field,
-            "user": self.username_field,
+            # match XML tag names exactly (lowercased)
+            "hostname": self.hostname_field,
+            "username": self.username_field,
             "port": self.port_field,
             "remote_working_directory": self.working_dir_field,
         }
@@ -197,11 +208,36 @@ class RemoteServerWidget(QWidget):
         for child in element:
             tag = child.tag.lower()
             widget = tag_to_widget.get(tag)
-            if widget and hasattr(widget, "from_xml"):
+            if widget is not None and hasattr(widget, "from_xml"):
                 widget.from_xml(child)
 
+        # re-run connection check after loading
         self._schedule_check()
 
+    def to_xml(self, tag: str = "remote_server") -> ET.Element:
+        """
+        Serialize remote server settings to XML.
+
+        Parameters
+        ----------
+        tag : str
+            XML element tag to use as root for this widget.
+        """
+        root = ET.Element(tag)
+
+        # adjust according to your actual fields / snapshot API
+        data: Dict[str, Any] = self.snapshot() if hasattr(self, "snapshot") else {
+            "hostname": self.hostname_field.text(),     # or .value()
+            "username": self.username_field.text(),
+            "port": str(self.port_field.value()),
+            "workdir": self.workdir_field.text(),
+        }
+
+        for key, value in data.items():
+            el = ET.SubElement(root, key)
+            el.text = str(value)
+
+        return root
 
     # -------- SSH check --------
     def _on_field_changed(self) -> None:
