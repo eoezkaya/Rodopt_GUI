@@ -3,7 +3,8 @@ from typing import Optional, Dict
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QToolButton,
-    QApplication, QTabWidget, QFileDialog, QMessageBox, QTabBar, QLabel
+    QApplication, QTabWidget, QFileDialog, QMessageBox,
+    QTabBar, QLabel
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
@@ -25,6 +26,7 @@ class Study(QWidget):
     Responsibilities:
       - owns tabs and lifecycle
       - owns XML lifecycle
+      - owns objective identity (Objective1, Objective2, ...)
       - passes XML path directly to RunDoE
       - displays current XML filename + dirty state
     """
@@ -58,7 +60,9 @@ class Study(QWidget):
         # XML label (top-right)
         # ------------------------------------------------------------
         self._xml_label = QLabel("MyStudy.xml", self)
-        self._xml_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._xml_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
         self._xml_label.setStyleSheet("""
             QLabel {
                 color: #666;
@@ -77,7 +81,9 @@ class Study(QWidget):
             b = QToolButton(text=text)
             b.setIcon(QIcon(icon))
             b.setIconSize(icon_size)
-            b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+            b.setToolButtonStyle(
+                Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+            )
             b.clicked.connect(cb)
             return b
 
@@ -174,7 +180,10 @@ class Study(QWidget):
         lay.setSpacing(0)
 
         if align_top:
-            lay.addWidget(child, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+            lay.addWidget(
+                child,
+                alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+            )
             lay.addStretch(1)
         else:
             lay.addWidget(child)
@@ -191,39 +200,64 @@ class Study(QWidget):
     # ==============================================================
     # Objective / Constraint
     # ==============================================================
+    def _next_objective_name(self) -> str:
+        i = 1
+        while f"Objective{i}" in self._widgets:
+            i += 1
+        return f"Objective{i}"
+
     def _add_objective_tab(self, *, from_element: ET.Element | None = None) -> None:
-        idx = sum(1 for k in self._widgets if k.startswith("Objective")) + 1
-        key = f"Objective {idx}"
+        name = self._next_objective_name()
 
         obj = ObjectiveFunction(
             label_width=self._label_width,
             field_width=self._field_width,
             button_size=self._button_size,
         )
+
+        # Objective identity is owned by Study
+        obj.name_field.text = name
+        obj.name_field.setEnabled(True)
+
         if from_element is not None:
             obj.from_xml(from_element)
+            obj.name_field.text = name  # enforce consistency
 
-        obj.name_field.textChanged.connect(lambda *_: self._rename_tab(key, obj.name_field.text()))
-        obj.name_field.textChanged.connect(self._mark_dirty)
+        self._add_tab(obj, name, align_top=True, closable=True)
 
-        self._add_tab(obj, key, align_top=True, closable=True)
+        wrapper = self._widgets[name]
+
+        # keep tab label in sync with name field
+        obj.name_field.textChanged.connect(
+            lambda text, w=wrapper: self._sync_tab_title(w, text)
+        )
+
+        obj.changed.connect(self._mark_dirty)
+
         self._propagate_problem_type()
-        self.tabs.setCurrentWidget(self._widgets[key])
+        self.tabs.setCurrentWidget(wrapper)
+
+
+    def _sync_tab_title(self, wrapper: QWidget, title: str) -> None:
+        idx = self.tabs.indexOf(wrapper)
+        if idx != -1:
+            self.tabs.setTabText(idx, title.strip() or "Objective")
+
 
     def _add_constraint_tab(self, *, from_element: ET.Element | None = None) -> None:
         idx = sum(1 for k in self._widgets if k.startswith("Constraint")) + 1
-        key = f"Constraint {idx}"
+        key = f"Constraint{idx}"
 
         con = ConstraintFunction(
             label_width=self._label_width,
             field_width=self._field_width,
             button_size=self._button_size,
         )
+
         if from_element is not None:
             con.from_xml(from_element)
 
-        con.name_field.textChanged.connect(lambda *_: self._rename_tab(key, con.name_field.text()))
-        con.name_field.textChanged.connect(self._mark_dirty)
+        con.changed.connect(self._mark_dirty)
 
         self._add_tab(con, key, align_top=True, closable=True)
         self._propagate_problem_type()
@@ -232,7 +266,6 @@ class Study(QWidget):
     # ==============================================================
     # RUN
     # ==============================================================
-
     def _run_doe(self) -> None:
         gs = self._widgets["General Settings"]._child
         data = gs.snapshot()
@@ -243,7 +276,6 @@ class Study(QWidget):
             QMessageBox.critical(self, "Error", "Invalid working directory.")
             return
 
-        # 🔴 Require an existing XML path
         if not self._study_path:
             QMessageBox.warning(
                 self,
@@ -252,16 +284,14 @@ class Study(QWidget):
             )
             self._save_to_file()
             if not self._study_path:
-                return  # user canceled
+                return
 
-        # 🔹 Always write to the existing study file
         with open(self._study_path, "w", encoding="utf-8") as f:
             f.write(self.to_xml_string())
 
         self._dirty = False
         self._update_xml_label()
 
-        # ---- Run tab handling ----
         if "Run" in self._widgets:
             run = self._widgets["Run"]._child
             run.set_xml_path(self._study_path)
@@ -279,17 +309,17 @@ class Study(QWidget):
         self._propagate_problem_type()
         self.tabs.setCurrentWidget(self._widgets["Run"])
 
-
-
-
     # ==============================================================
     # New / Save / Load / Exit
     # ==============================================================
     def _new_study(self) -> None:
         if self._dirty:
             r = QMessageBox.question(
-                self, "New Study", "Discard current study?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                self,
+                "New Study",
+                "Discard current study?",
+                QMessageBox.StandardButton.Yes |
+                QMessageBox.StandardButton.No,
             )
             if r != QMessageBox.StandardButton.Yes:
                 return
@@ -307,7 +337,9 @@ class Study(QWidget):
 
     def _save_to_file(self) -> None:
         default_path = self._study_path or self._study_filename
-        path, _ = QFileDialog.getSaveFileName(self, "Save XML", default_path, "XML Files (*.xml)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save XML", default_path, "XML Files (*.xml)"
+        )
         if not path:
             return
 
@@ -319,7 +351,9 @@ class Study(QWidget):
         self._update_xml_label()
 
     def _load_from_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Load XML", "", "XML Files (*.xml)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load XML", "", "XML Files (*.xml)"
+        )
         if not path:
             return
 
@@ -330,8 +364,12 @@ class Study(QWidget):
         self._widgets.clear()
 
         self._add_core_tabs()
-        self._widgets["General Settings"]._child.from_xml(root.find("general_settings"))
-        self._widgets["Parameters"]._child.from_xml(root.find("problem_parameters"))
+        self._widgets["General Settings"]._child.from_xml(
+            root.find("general_settings")
+        )
+        self._widgets["Parameters"]._child.from_xml(
+            root.find("problem_parameters")
+        )
 
         for el in root.findall("objective_function"):
             self._add_objective_tab(from_element=el)
@@ -346,7 +384,9 @@ class Study(QWidget):
     def _exit_app(self) -> None:
         if self._dirty:
             r = QMessageBox.warning(
-                self, "Unsaved Changes", "Save before exit?",
+                self,
+                "Unsaved Changes",
+                "Save before exit?",
                 QMessageBox.StandardButton.Save |
                 QMessageBox.StandardButton.Discard |
                 QMessageBox.StandardButton.Cancel,
@@ -360,7 +400,6 @@ class Study(QWidget):
     # ==============================================================
     # Helpers
     # ==============================================================
-
     def _update_xml_label(self):
         if self._study_path:
             name = os.path.basename(self._study_path)
@@ -369,16 +408,7 @@ class Study(QWidget):
             name = "MyStudy.xml"
             self._xml_label.setToolTip("Unsaved study")
 
-        text = f"{name}*" if self._dirty else name
-        self._xml_label.setText(text)
-
-
-    def _rename_tab(self, key: str, title: str) -> None:
-        wrapper = self._widgets.get(key)
-        if wrapper:
-            idx = self.tabs.indexOf(wrapper)
-            if idx != -1:
-                self.tabs.setTabText(idx, title.strip() or key)
+        self._xml_label.setText(f"{name}*" if self._dirty else name)
 
     def _close_tab(self, index: int) -> None:
         widget = self.tabs.widget(index)
@@ -410,9 +440,12 @@ class Study(QWidget):
         par = self._widgets["Parameters"]._child
 
         gs.num_params_field.valueChanged.connect(
-            lambda n: par.set_rows(par.snapshot()[:n]) if par.row_count() > n else None
+            lambda n: par.set_rows(par.snapshot()[:n])
+            if par.row_count() > n else None
         )
-        par.rowCountChanged.connect(lambda n: setattr(gs.num_params_field, "value", n))
+        par.rowCountChanged.connect(
+            lambda n: setattr(gs.num_params_field, "value", n)
+        )
 
     def to_xml(self, *, root_tag: str = "optimization_study") -> ET.Element:
         root = ET.Element(root_tag)
@@ -423,7 +456,10 @@ class Study(QWidget):
         return root
 
     def to_xml_string(self) -> str:
-        return ET.tostring(self.to_xml(), encoding="utf-8").decode("utf-8")
+        return ET.tostring(
+            self.to_xml(),
+            encoding="utf-8"
+        ).decode("utf-8")
 
 
 # ----------------------------------------------------------------------

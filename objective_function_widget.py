@@ -10,6 +10,10 @@ from PyQt6.QtCore import pyqtSignal, Qt
 from xml.etree import ElementTree as ET
 import sys
 import os
+import re
+from PyQt6.QtWidgets import QLineEdit
+
+
 
 from string_field import StringField
 from string_options_field import StringOptionsField
@@ -72,6 +76,15 @@ class ObjectiveFunction(QWidget):
             field_width=field_width,
             parent=self.group_box,
         )
+
+        self._name_valid = True
+
+        self._invalid_name_style = """
+        QLineEdit {
+            border: 2px solid red;
+            border-radius: 3px;
+        }
+        """
 
         self.execution_location_field = StringOptionsField(
             "Execution location",
@@ -213,7 +226,8 @@ class ObjectiveFunction(QWidget):
         # ------------------------------------------------------------
         # Signals
         # ------------------------------------------------------------
-        self.name_field.textChanged.connect(self.changed.emit)
+        self.name_field.textChanged.connect(self._on_name_changed)
+
         self.execution_location_field.valueChanged.connect(
             self._on_execution_location_changed
         )
@@ -359,7 +373,41 @@ class ObjectiveFunction(QWidget):
 
         self._on_derivative_info_changed(self.derivative_info_field.value)
 
+    
+    def _name_line_edit(self) -> QLineEdit | None:
+        """
+        Safely obtain the internal QLineEdit of StringField.
+        """
+        return self.name_field.findChild(QLineEdit)
 
+    def _is_valid_name(self, text: str) -> bool:
+        if not text:
+            return False
+        return bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", text))
+
+
+    def _on_name_changed(self, text: str) -> None:
+        valid = self._is_valid_name(text)
+        self._name_valid = valid
+
+        edit = self._name_line_edit()
+        if edit is not None:
+            if valid:
+                edit.setStyleSheet("")
+            else:
+                edit.setStyleSheet("""
+                    QLineEdit {
+                        border: 2px solid red;
+                        border-radius: 3px;
+                    }
+                """)
+
+        self.changed.emit()
+
+
+    def is_name_valid(self) -> bool:
+        return self._name_valid
+    
 # ---------------- Demo ----------------
 if __name__ == "__main__":
     app = QApplication(sys.argv)
