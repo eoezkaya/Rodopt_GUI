@@ -132,7 +132,10 @@ class ObjectiveFunction(QWidget):
             label_width=label_width,
             field_width=field_width,
             parent=self.group_box,
+            filters="CSV files (*.csv)",  # only CSV allowed in dialog
         )
+        # validate & normalize on change
+        self.training_file.pathChanged.connect(self._on_training_file_changed)
 
         self.design_file = FilePathField(
             "Design variables file",
@@ -407,7 +410,57 @@ class ObjectiveFunction(QWidget):
 
     def is_name_valid(self) -> bool:
         return self._name_valid
-    
+
+    def _on_training_file_changed(self, new_path: str) -> None:
+        """
+        Keep only basename and ensure it is a .csv file.
+        Show red border if invalid.
+        """
+        raw = new_path.strip()
+        filename = os.path.basename(raw)
+
+        # normalize display to basename only
+        if filename != self.training_file.path:
+            self.training_file.path = filename
+
+        if not filename:
+            # empty is considered invalid here
+            self._set_filefield_valid(
+                self.training_file,
+                valid=False,
+                tooltip="Training data file is required and must be a .csv file.",
+            )
+            return
+
+        if filename.lower().endswith(".csv"):
+            self._set_filefield_valid(self.training_file, valid=True, tooltip="")
+        else:
+            self._set_filefield_valid(
+                self.training_file,
+                valid=False,
+                tooltip="Training data file must have .csv extension.",
+            )
+
+    def _set_filefield_valid(self, field: FilePathField, *, valid: bool, tooltip: str) -> None:
+        """
+        Simple visual validation for a single-field FilePathField:
+        - red border on invalid
+        - normal border on valid
+        """
+        if not hasattr(field, "_fields") or not field._fields:
+            return
+
+        # assuming FilePathField internally stores tuples (label, edit, btn)
+        label, edit, btn = field._fields[0]
+
+        if valid:
+            edit.setStyleSheet("")  # reset to default
+        else:
+            edit.setStyleSheet(
+                "QLineEdit { border: 2px solid red; border-radius: 3px; }"
+            )
+        edit.setToolTip(tooltip)
+
 # ---------------- Demo ----------------
 if __name__ == "__main__":
     app = QApplication(sys.argv)

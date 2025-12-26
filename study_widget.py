@@ -206,6 +206,12 @@ class Study(QWidget):
             i += 1
         return f"Objective{i}"
 
+    def _next_constraint_name(self) -> str:
+        i = 1
+        while f"Constraint{i}" in self._widgets:
+            i += 1
+        return f"Constraint{i}"
+
     def _add_objective_tab(self, *, from_element: ET.Element | None = None) -> None:
         name = self._next_objective_name()
 
@@ -237,16 +243,14 @@ class Study(QWidget):
         self._propagate_problem_type()
         self.tabs.setCurrentWidget(wrapper)
 
-
     def _sync_tab_title(self, wrapper: QWidget, title: str) -> None:
         idx = self.tabs.indexOf(wrapper)
         if idx != -1:
             self.tabs.setTabText(idx, title.strip() or "Objective")
 
-
     def _add_constraint_tab(self, *, from_element: ET.Element | None = None) -> None:
-        idx = sum(1 for k in self._widgets if k.startswith("Constraint")) + 1
-        key = f"Constraint{idx}"
+        name = self._next_constraint_name()
+        key = name  # key matches the visible/default name
 
         con = ConstraintFunction(
             label_width=self._label_width,
@@ -254,14 +258,33 @@ class Study(QWidget):
             button_size=self._button_size,
         )
 
+        # Constraint identity is owned by Study
+        con.name = name
+        con.name_field.setEnabled(True)
+
         if from_element is not None:
             con.from_xml(from_element)
+            # enforce consistency: label matches our Study-owned name
+            con.name = name
+
+        self._add_tab(con, key, align_top=True, closable=True)
+
+        wrapper = self._widgets[key]
+
+        # keep tab label in sync with constraint name field
+        con.name_field.textChanged.connect(
+            lambda text, w=wrapper: self._sync_constraint_tab_title(w, text)
+        )
 
         con.changed.connect(self._mark_dirty)
 
-        self._add_tab(con, key, align_top=True, closable=True)
         self._propagate_problem_type()
-        self.tabs.setCurrentWidget(self._widgets[key])
+        self.tabs.setCurrentWidget(wrapper)
+
+    def _sync_constraint_tab_title(self, wrapper: QWidget, title: str) -> None:
+        idx = self.tabs.indexOf(wrapper)
+        if idx != -1:
+            self.tabs.setTabText(idx, title.strip() or "Constraint")
 
     # ==============================================================
     # RUN

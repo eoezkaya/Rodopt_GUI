@@ -29,7 +29,7 @@ class ConstraintFunction(QWidget):
         *,
         label_width: int = 180,
         field_width: int = 360,
-        button_size: int = 32,
+        button_size: int = 40,
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
@@ -41,6 +41,15 @@ class ConstraintFunction(QWidget):
         self._default_execution_location = "local"
         self._default_paths = ["", "", "", ""]
         self._default_workdir = os.getcwd()
+
+        # name validation state + style
+        self._name_valid = True
+        self._invalid_name_style = """
+        QLineEdit {
+            border: 2px solid red;
+            border-radius: 3px;
+        }
+        """
 
         # --------------------------------------------------
         # Group box
@@ -64,6 +73,7 @@ class ConstraintFunction(QWidget):
             field_width=field_width,
             parent=self.group_box,
         )
+        self.name_field.textChanged.connect(self._on_name_changed)
 
         self.execution_location_field = StringOptionsField(
             "Execution location",
@@ -195,6 +205,39 @@ class ConstraintFunction(QWidget):
         )
         self.changed.emit()
 
+    def _on_name_changed(self, text: str) -> None:
+        """
+        Validate constraint name:
+        - no whitespace
+        - only letters, digits, underscore
+        """
+        name = text.strip()
+        import re
+
+        if name and re.fullmatch(r"[A-Za-z0-9_]+", name):
+            self._set_name_valid(True)
+        else:
+            self._set_name_valid(False)
+
+        # still emit the standard changed signal
+        self.changed.emit()
+
+    def _set_name_valid(self, valid: bool) -> None:
+        if self._name_valid == valid:
+            return
+        self._name_valid = valid
+
+        edit = self.name_field._edit  # StringField's QLineEdit
+        if valid:
+            edit.setStyleSheet("")
+            edit.setToolTip("")
+        else:
+            edit.setStyleSheet(self._invalid_name_style)
+            edit.setToolTip(
+                "Invalid name. Use only letters, digits, and underscore; "
+                "no spaces or special characters."
+            )
+
     # ==================================================
     # Core logic
     # ==================================================
@@ -305,6 +348,16 @@ class ConstraintFunction(QWidget):
             value.strip().lower() == "remote"
         )
         self.changed.emit()
+
+    # --- public API for Study ---
+
+    @property
+    def name(self) -> str:
+        return self.name_field.text.strip()
+
+    @name.setter
+    def name(self, value: str) -> None:
+        self.name_field.text = value.strip() or self._default_name
 
 
 # --------------------------------------------------
