@@ -3,14 +3,13 @@ from typing import Optional, Dict
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QToolButton,
-    QApplication, QTabWidget, QFileDialog, QMessageBox, QTabBar
+    QApplication, QTabWidget, QFileDialog, QMessageBox, QTabBar, QLabel
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
 from xml.etree import ElementTree as ET
 import sys
 import os
-import json
 
 from general_settings_widget import GeneralSettings
 from objective_function_widget import ObjectiveFunction
@@ -25,8 +24,9 @@ class Study(QWidget):
 
     Responsibilities:
       - owns tabs and lifecycle
-      - observes GeneralSettings
-      - keeps and propagates `problem_type`
+      - owns XML lifecycle
+      - passes XML path directly to RunDoE
+      - displays current XML filename + dirty state
     """
 
     CORE_TABS = ("General Settings", "Parameters")
@@ -53,6 +53,20 @@ class Study(QWidget):
         self.tabs = QTabWidget(self)
         self.tabs.setTabsClosable(True)
         self.tabs.tabCloseRequested.connect(self._close_tab)
+
+        # ------------------------------------------------------------
+        # XML label (top-right)
+        # ------------------------------------------------------------
+        self._xml_label = QLabel("MyStudy.xml", self)
+        self._xml_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._xml_label.setStyleSheet("""
+            QLabel {
+                color: #666;
+                font-size: 11px;
+                padding-right: 6px;
+            }
+        """)
+        self._xml_label.setToolTip("Unsaved study")
 
         # ------------------------------------------------------------
         # Buttons
@@ -91,8 +105,13 @@ class Study(QWidget):
         # ------------------------------------------------------------
         # Main layout
         # ------------------------------------------------------------
+        top_row = QHBoxLayout()
+        top_row.addStretch(1)
+        top_row.addWidget(self._xml_label)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
+        layout.addLayout(top_row)
         layout.addWidget(self.tabs)
         layout.addLayout(btn_row)
         self.setLayout(layout)
@@ -115,14 +134,13 @@ class Study(QWidget):
         self._add_core_tabs()
         self._add_objective_tab()
         self._setup_sync()
-        # Ensure General Settings is active initially
         self.tabs.setCurrentIndex(0)
+        self._update_xml_label()
 
     # ==============================================================
     # Core tabs
     # ==============================================================
     def _add_core_tabs(self) -> None:
-        # --- General Settings ---
         gs = GeneralSettings(
             label_width=self._label_width,
             text_field_width=self._field_width,
@@ -132,18 +150,14 @@ class Study(QWidget):
         gs.problemTypeChanged.connect(self._on_problem_type_changed)
 
         self.problem_type = gs.problem_type
-
         self._add_tab(gs, "General Settings", align_top=True, closable=False)
 
-        # --- Parameters ---
         par = Parameters(initial_rows=3)
         par.rowCountChanged.connect(self._mark_dirty)
         self._add_tab(par, "Parameters", align_top=False, closable=False)
 
         self._propagate_problem_type()
-        self.tabs.setCurrentIndex(0)
 
-    # ==============================================================
     def _add_tab(
         self,
         child: QWidget,
@@ -153,7 +167,7 @@ class Study(QWidget):
         closable: bool = True,
     ) -> None:
         wrapper = QWidget()
-        wrapper._child = child  # explicit ownership
+        wrapper._child = child
 
         lay = QVBoxLayout(wrapper)
         lay.setContentsMargins(10, 10, 10, 10)
@@ -161,6 +175,7 @@ class Study(QWidget):
 
         if align_top:
             lay.addWidget(child, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+            lay.addStretch(1)
         else:
             lay.addWidget(child)
 
@@ -188,19 +203,10 @@ class Study(QWidget):
         if from_element is not None:
             obj.from_xml(from_element)
 
-        obj.name_field.textChanged.connect(
-            lambda name, k=key: self._rename_tab(k, name)
-        )
+        obj.name_field.textChanged.connect(lambda *_: self._rename_tab(key, obj.name_field.text()))
         obj.name_field.textChanged.connect(self._mark_dirty)
 
-        # add tab first (with internal key)
         self._add_tab(obj, key, align_top=True, closable=True)
-
-        # immediately set the visible label to "ObjectiveFunction"
-        idx_tab = self.tabs.indexOf(self._widgets[key])
-        if idx_tab != -1:
-            self.tabs.setTabText(idx_tab, "ObjectiveFunction")
-
         self._propagate_problem_type()
         self.tabs.setCurrentWidget(self._widgets[key])
 
@@ -216,9 +222,7 @@ class Study(QWidget):
         if from_element is not None:
             con.from_xml(from_element)
 
-        con.name_field.textChanged.connect(
-            lambda name, k=key: self._rename_tab(k, name)
-        )
+        con.name_field.textChanged.connect(lambda *_: self._rename_tab(key, con.name_field.text()))
         con.name_field.textChanged.connect(self._mark_dirty)
 
         self._add_tab(con, key, align_top=True, closable=True)
@@ -226,76 +230,93 @@ class Study(QWidget):
         self.tabs.setCurrentWidget(self._widgets[key])
 
     # ==============================================================
-    # Problem type propagation
+    # RUN
     # ==============================================================
-    def _on_problem_type_changed(self, value: str):
-        self.problem_type = value
-        self._propagate_problem_type()
 
-    def _propagate_problem_type(self):
-        for wrapper in self._widgets.values():
-            child = getattr(wrapper, "_child", None)
-            if child and hasattr(child, "set_problem_type"):
-                child.set_problem_type(self.problem_type)
+    def _run_doe(self) -> None:
+        gs = self._widgets["General Settings"]._child
+        data = gs.snapshot()
 
-    # ==============================================================
-    # Tab helpers
-    # ==============================================================
-    def _rename_tab(self, key: str, title: str) -> None:
-        wrapper = self._widgets.get(key)
-        if not wrapper:
+        working_dir = data["working_directory"]
+
+        if not os.path.isdir(working_dir):
+            QMessageBox.critical(self, "Error", "Invalid working directory.")
             return
-        idx = self.tabs.indexOf(wrapper)
-        if idx != -1:
-            self.tabs.setTabText(idx, title.strip() or key)
-        self._mark_dirty()
 
-    def _close_tab(self, index: int) -> None:
-        widget = self.tabs.widget(index)
-        for key, w in list(self._widgets.items()):
-            if w is widget:
-                if key in self.CORE_TABS:
-                    return
-                self._widgets.pop(key)
-                self.tabs.removeTab(index)
-                widget.deleteLater()
-                self._mark_dirty()
-                return
+        # 🔴 Require an existing XML path
+        if not self._study_path:
+            QMessageBox.warning(
+                self,
+                "Save required",
+                "Please save the study before running."
+            )
+            self._save_to_file()
+            if not self._study_path:
+                return  # user canceled
+
+        # 🔹 Always write to the existing study file
+        with open(self._study_path, "w", encoding="utf-8") as f:
+            f.write(self.to_xml_string())
+
+        self._dirty = False
+        self._update_xml_label()
+
+        # ---- Run tab handling ----
+        if "Run" in self._widgets:
+            run = self._widgets["Run"]._child
+            run.set_xml_path(self._study_path)
+            self.tabs.setCurrentWidget(self._widgets["Run"])
+            return
+
+        run = RunDoE(
+            label_width=self._label_width,
+            field_width=self._field_width,
+            button_size=self._button_size,
+        )
+        run.set_xml_path(self._study_path)
+
+        self._add_tab(run, "Run", align_top=True, closable=True)
+        self._propagate_problem_type()
+        self.tabs.setCurrentWidget(self._widgets["Run"])
+
+
+
 
     # ==============================================================
-    # New / Save / Load
+    # New / Save / Load / Exit
     # ==============================================================
     def _new_study(self) -> None:
-        if QMessageBox.question(
-            self, "New Study", "Discard current study?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        ) != QMessageBox.StandardButton.Yes:
-            return
+        if self._dirty:
+            r = QMessageBox.question(
+                self, "New Study", "Discard current study?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if r != QMessageBox.StandardButton.Yes:
+                return
 
         self.tabs.clear()
         self._widgets.clear()
         self._dirty = False
-        self._set_study_path(None)
+        self._study_path = None
 
         self._add_core_tabs()
         self._add_objective_tab()
         self._setup_sync()
+        self.tabs.setCurrentIndex(0)
+        self._update_xml_label()
 
     def _save_to_file(self) -> None:
-        # if a file was already loaded/saved, use that; otherwise "MyStudy.xml"
         default_path = self._study_path or self._study_filename
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save XML",
-            default_path,
-            "XML Files (*.xml)",
-        )
+        path, _ = QFileDialog.getSaveFileName(self, "Save XML", default_path, "XML Files (*.xml)")
         if not path:
             return
+
         with open(path, "w", encoding="utf-8") as f:
             f.write(self.to_xml_string())
+
+        self._study_path = path
         self._dirty = False
-        self._set_study_path(path)
+        self._update_xml_label()
 
     def _load_from_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Load XML", "", "XML Files (*.xml)")
@@ -309,13 +330,8 @@ class Study(QWidget):
         self._widgets.clear()
 
         self._add_core_tabs()
-
-        gs = self._widgets["General Settings"]._child
-        gs.from_xml(root.find("general_settings"))
-        self.problem_type = gs.problem_type
-
-        par = self._widgets["Parameters"]._child
-        par.from_xml(root.find("problem_parameters"))
+        self._widgets["General Settings"]._child.from_xml(root.find("general_settings"))
+        self._widgets["Parameters"]._child.from_xml(root.find("problem_parameters"))
 
         for el in root.findall("objective_function"):
             self._add_objective_tab(from_element=el)
@@ -323,60 +339,10 @@ class Study(QWidget):
         for el in root.findall("constraint_function"):
             self._add_constraint_tab(from_element=el)
 
-        self._propagate_problem_type()
+        self._study_path = path
         self._dirty = False
-        self._set_study_path(path)
+        self._update_xml_label()
 
-    # ==============================================================
-    # RUN
-    # ==============================================================
-    def _run_doe(self) -> None:
-        config_path = os.path.join(os.path.expanduser("~"), ".rodop_run_config.json")
-        last_loaded_xml = None
-
-        if os.path.isfile(config_path):
-            with open(config_path, "r", encoding="utf-8") as f:
-                last_loaded_xml = json.load(f).get("last_loaded_xml")
-
-        gs = self._widgets["General Settings"]._child
-        data = gs.snapshot()
-
-        problem_name = data["problem_name"]
-        working_dir = data["working_directory"]
-
-        if not os.path.isdir(working_dir):
-            QMessageBox.critical(self, "Error", "Invalid working directory.")
-            return
-
-        if last_loaded_xml and os.path.isfile(last_loaded_xml):
-            xml_path = last_loaded_xml
-        else:
-            xml_path = os.path.join(working_dir, f"{problem_name}.xml")
-
-        with open(xml_path, "w", encoding="utf-8") as f:
-            f.write(self.to_xml_string())
-
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump({"last_loaded_xml": os.path.abspath(xml_path)}, f, indent=2)
-
-        if "Run" in self._widgets:
-            self.tabs.setCurrentWidget(self._widgets["Run"])
-            return
-
-        run = RunDoE(
-            label_width=self._label_width,
-            field_width=self._field_width,
-            button_size=self._button_size,
-        )
-        run.xml_field.path = xml_path
-
-        self._add_tab(run, "Run", align_top=True, closable=True)
-        self._propagate_problem_type()
-        self.tabs.setCurrentWidget(self._widgets["Run"])
-
-    # ==============================================================
-    # Exit / Sync / XML
-    # ==============================================================
     def _exit_app(self) -> None:
         if self._dirty:
             r = QMessageBox.warning(
@@ -391,23 +357,60 @@ class Study(QWidget):
                 return
         QApplication.instance().quit()
 
-    def _mark_dirty(self, *args):
-        self._dirty = True
+    # ==============================================================
+    # Helpers
+    # ==============================================================
 
-    def _set_study_path(self, path: Optional[str]) -> None:
-        self._study_path = path
-        if path:
-            self._study_filename = os.path.basename(path)
+    def _update_xml_label(self):
+        if self._study_path:
+            name = os.path.basename(self._study_path)
+            self._xml_label.setToolTip(self._study_path)
         else:
-            self._study_filename = "MyStudy.xml"
+            name = "MyStudy.xml"
+            self._xml_label.setToolTip("Unsaved study")
 
-    def _setup_sync(self) -> None:
+        text = f"{name}*" if self._dirty else name
+        self._xml_label.setText(text)
+
+
+    def _rename_tab(self, key: str, title: str) -> None:
+        wrapper = self._widgets.get(key)
+        if wrapper:
+            idx = self.tabs.indexOf(wrapper)
+            if idx != -1:
+                self.tabs.setTabText(idx, title.strip() or key)
+
+    def _close_tab(self, index: int) -> None:
+        widget = self.tabs.widget(index)
+        for key, w in list(self._widgets.items()):
+            if w is widget and key not in self.CORE_TABS:
+                self._widgets.pop(key)
+                self.tabs.removeTab(index)
+                widget.deleteLater()
+                self._mark_dirty()
+                return
+
+    def _on_problem_type_changed(self, value: str):
+        self.problem_type = value
+        self._propagate_problem_type()
+
+    def _propagate_problem_type(self):
+        for wrapper in self._widgets.values():
+            child = getattr(wrapper, "_child", None)
+            if child and hasattr(child, "set_problem_type"):
+                child.set_problem_type(self.problem_type)
+
+    def _mark_dirty(self, *args):
+        if not self._dirty:
+            self._dirty = True
+            self._update_xml_label()
+
+    def _setup_sync(self):
         gs = self._widgets["General Settings"]._child
         par = self._widgets["Parameters"]._child
 
         gs.num_params_field.valueChanged.connect(
-            lambda n: par.set_rows(par.snapshot()[:n])
-            if par.row_count() > n else None
+            lambda n: par.set_rows(par.snapshot()[:n]) if par.row_count() > n else None
         )
         par.rowCountChanged.connect(lambda n: setattr(gs.num_params_field, "value", n))
 
@@ -431,7 +434,7 @@ if __name__ == "__main__":
     apply_theme(app, "neutral")
 
     w = Study()
-    w.setWindowTitle("Study — Demo")
+    w.setWindowTitle("Study")
     w.resize(1100, 750)
     w.show()
 

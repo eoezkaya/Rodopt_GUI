@@ -10,6 +10,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt 
 import xml.etree.ElementTree as ET
 from PyQt6.QtGui import QPixmap, QTransform, QIcon
+from csv_table_updater import CSVTableUpdater
+from config_store import load_executable
+from config_store import save_executable
+
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -36,7 +40,6 @@ from file_path_field import FilePathField
 
 
 class RunDoE(QWidget):
-    CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".rodop_run_config.json")
     ICON_DIR = Path(__file__).resolve().parent / "images"
 
     def __init__(
@@ -58,7 +61,9 @@ class RunDoE(QWidget):
         self._last_csv_mtime = 0.0
         self._dimension: Optional[int] = None
 
-        self.last_exec_path = self._load_last_executable()
+        self.last_exec_path = load_executable()
+
+
 
         # ==========================================================
         # === Header ===
@@ -159,7 +164,8 @@ class RunDoE(QWidget):
             filters="Executable files (*)",
             parent=self.group_box,
         )
-        self.exec_field.pathChanged.connect(self._save_current_executable)
+        self.exec_field.pathChanged.connect(save_executable)
+
         self.exec_field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self.xml_field = FilePathField(
@@ -167,12 +173,16 @@ class RunDoE(QWidget):
             path="",
             label_width=label_width,
             field_width=field_width,
-            select_mode="open_file",
-            dialog_title="Select XML configuration file",
-            filters="XML files (*.xml);;All files (*)",
+            select_mode="open_file",   # irrelevant now
             parent=self.group_box,
         )
-        self.xml_field.pathChanged.connect(self._update_run_directory)
+
+        # 🔒 make it display-only
+        self.xml_field.setEnabled(False)
+
+        self._xml_path: Optional[str] = None
+
+
         self.xml_field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self.run_dir_field = FilePathField(
@@ -210,20 +220,7 @@ class RunDoE(QWidget):
         self.table.verticalHeader().setVisible(False)
         
         
-                # ==========================================================
-        # === Auto-load last XML path from ~/.rodop_run_config.json ===
-        # ==========================================================
-        try:
-            if os.path.isfile(self.CONFIG_FILE):
-                with open(self.CONFIG_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    last_xml = data.get("last_loaded_xml", "").strip()
-                    if last_xml and os.path.isfile(last_xml):
-                        self.xml_field.path = last_xml
-                        print(f"[RunDoE] Auto-loaded last XML: {last_xml}")
-        except Exception as e:
-            print(f"[RunDoE] Warning: failed to auto-load last XML: {e}")
-
+        self._csv_updater = CSVTableUpdater(self.table)
 
         # ==========================================================
         # === Main layout ===
@@ -257,6 +254,12 @@ class RunDoE(QWidget):
     # === Process handling ===
     # ==========================================================
     
+    def set_xml_path(self, path: str) -> None:
+        self._xml_path = os.path.abspath(path)
+        self.xml_field.path = self._xml_path   # display only
+        self._update_run_directory()
+
+
     def _on_run_clicked(self):
         """Start or resume the DoE process."""
         # --- Resume case ---
@@ -286,17 +289,17 @@ class RunDoE(QWidget):
 
         # --- Normal start case ---
         exec_path = self.exec_field.path.strip()
-        xml_path = self.xml_field.path.strip()
+        xml_path = self._xml_path
+
+
 
         if not exec_path or not os.path.isfile(exec_path):
             QMessageBox.critical(self, "Executable not found", "Please select a valid executable.")
             return
 
-        if not xml_path or not os.path.isfile(xml_path):
-            QMessageBox.critical(self, "XML file not found", "Please select a valid XML configuration file.")
-            return
+        save_executable(exec_path)
 
-        self._save_current_executable(exec_path)
+        
         if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
             self.process.kill()
             self.process.waitForFinished(1000)
@@ -396,36 +399,15 @@ class RunDoE(QWidget):
         text = bytes(self.process.readAllStandardError()).decode("utf-8", errors="ignore")
         print("[RunDoE][stderr]", text.strip())
 
-    # ==========================================================
-    # === Config persistence ===
-    # ==========================================================
-    def _load_last_executable(self) -> str:
-        try:
-            if os.path.isfile(self.CONFIG_FILE):
-                with open(self.CONFIG_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    path = data.get("rodeo_executable", "")
-                    if path and os.path.isfile(path):
-                        return path
-        except Exception as e:
-            print(f"[RunDoE] Failed to load config: {e}")
-        return ""
-
-    def _save_current_executable(self, path: str):
-        try:
-            if path.strip():
-                data = {"rodeo_executable": path.strip()}
-                with open(self.CONFIG_FILE, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2)
-        except Exception as e:
-            print(f"[RunDoE] Failed to save config: {e}")
-
+    
     # ==========================================================
     # === Run directory tracking ===
     # ==========================================================
     def _update_run_directory(self):
         """Detect latest valid run directory created after pressing 'Run'."""
-        xml_path = self.xml_field.path.strip()
+       
+       
+        xml_path = self._xml_path
         if not (xml_path and os.path.isfile(xml_path)):
             self.run_dir_field.path = "(none found)"
             self._dimension = None
@@ -447,12 +429,12 @@ class RunDoE(QWidget):
             
             try:
                 num_objectives = 0
-                if xml_path := self.xml_field.path.strip():
-                    if os.path.isfile(xml_path):
-                        tree = ET.parse(xml_path)
-                        root = tree.getroot()
-                        num_objectives = len(root.findall("objective_function"))
+                if self._xml_path and os.path.isfile(self._xml_path):
+                    tree = ET.parse(self._xml_path)
+                    root = tree.getroot()
+                    num_objectives = len(root.findall("objective_function"))
                 self.btn_plot.setEnabled(num_objectives == 2)
+
             except Exception as e:
                 print(f"[RunDoE] Could not determine number of objectives: {e}")
                 self.btn_plot.setEnabled(False)
@@ -531,7 +513,7 @@ class RunDoE(QWidget):
             data = rows[1:]
     
             # determine objective columns from XML
-            xml_path = self.xml_field.path.strip()
+            xml_path = self._xml_path
             tree = ET.parse(xml_path)
             root = tree.getroot()
             num_objectives = len(root.findall("objective_function"))
@@ -653,190 +635,17 @@ class RunDoE(QWidget):
     # ==========================================================#
     
     def _update_csv_table(self):
-        """Load DoE_history.csv periodically and update table view."""
-        if not self.start_time or self.state != "running":
-            return
-    
         run_dir = self.run_dir_field.path.strip()
-        if not run_dir or not os.path.isdir(run_dir):
+        if not run_dir:
             return
-    
-        csv_path = os.path.join(run_dir, "DoE_history.csv")
-        if not os.path.isfile(csv_path):
-            return
-    
-        try:
-            mtime = os.path.getmtime(csv_path)
-            if mtime == self._last_csv_mtime or (self.start_time and mtime < self.start_time):
-                return
-    
-            with open(csv_path, newline="", encoding="utf-8") as f:
-                rows = list(csv.reader(f))
-            if len(rows) < 2:
-                return
-    
-            headers = rows[0]
-            data = rows[1:]
-            n_cols = len(headers)
-            if n_cols == 0:
-                return
-    
-            dim = self._dimension or 0  # number of input variables from XML
-            if dim >= n_cols:
-                return
-    
-            # ----------------------------------------------------------
-            # --- Determine number of objective functions from XML ---
-            # ----------------------------------------------------------
-            num_objectives = 1
-            xml_path = self.xml_field.path.strip()
-            try:
-                if xml_path and os.path.isfile(xml_path):
-                    tree = ET.parse(xml_path)
-                    root = tree.getroot()
-                    num_objectives = len(root.findall("objective_function")) or 1
-            except Exception as e:
-                print(f"[RunDoE] Could not count objective functions: {e}")
-                num_objectives = 1
-    
-            feas_col = n_cols - 1  # last column = feasibility
-            obj_cols = list(range(dim, min(dim + num_objectives, n_cols)))
-    
-            # improvement column if present
-            improvement_col = None
-            for i, h in enumerate(headers):
-                if h.strip().lower() == "improvement":
-                    improvement_col = i
-                    break
-    
-            # ----------------------------------------------------------
-            # --- Pareto detection helper ---
-            # ----------------------------------------------------------
-            def _find_pareto_front(values):
-                """Return indices of Pareto-optimal points (minimize objectives)."""
-                pareto = set()
-                for i, vi in enumerate(values):
-                    dominated = False
-                    for j, vj in enumerate(values):
-                        if j == i:
-                            continue
-                        if all(a <= b for a, b in zip(vj, vi)) and any(a < b for a, b in zip(vj, vi)):
-                            dominated = True
-                            break
-                    if not dominated:
-                        pareto.add(i)
-                return pareto
-    
-            # ----------------------------------------------------------
-            # --- Identify special points ---
-            # ----------------------------------------------------------
-            pareto_indices = set()
-            best_idx = None
-    
-            if num_objectives == 1:
-                obj_col = obj_cols[0]
-                feasible = [
-                    (i, float(r[obj_col]))
-                    for i, r in enumerate(data)
-                    if feas_col < len(r) and self._is_float(r[feas_col]) and float(r[feas_col]) == 1.0
-                ]
-                if feasible:
-                    best_idx, _ = min(feasible, key=lambda x: x[1])
-            elif num_objectives == 2:
-                feasible_points = []
-                for i, row in enumerate(data):
-                    try:
-                        if feas_col < len(row) and float(row[feas_col]) == 1.0:
-                            values = [float(row[c]) for c in obj_cols]
-                            feasible_points.append((i, values))
-                    except Exception:
-                        continue
-                if feasible_points:
-                    pareto_local = _find_pareto_front([v for _, v in feasible_points])
-                    pareto_indices = {feasible_points[k][0] for k in pareto_local}
-    
-            # ----------------------------------------------------------
-            # --- Populate table ---
-            # ----------------------------------------------------------
-            self.table.clear()
-            self.table.setColumnCount(len(headers) + 1)
-            self.table.setRowCount(len(data))
-            self.table.setHorizontalHeaderLabels(["ID"] + headers)
-    
-            for i, row in enumerate(data):
-                id_val = str(i + 1)
-                if i == best_idx or i in pareto_indices:
-                    id_val = f"★ {id_val}"
-                id_item = QTableWidgetItem(id_val)
-                id_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                id_item.setFlags(id_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self.table.setItem(i, 0, id_item)
-    
-                for j, val in enumerate(row):
-                    table_col = j + 1
-                    if j == feas_col:
-                        try:
-                            feas = float(val)
-                            if feas == 1.0:
-                                val = "Yes"
-                                color = QColor("#2ECC71")
-                            else:
-                                val = "No"
-                                color = QColor("#E74C3C")
-                        except ValueError:
-                            color = QColor("#000000")
-                        item = QTableWidgetItem(val)
-                        item.setForeground(color)
-                    else:
-                        item = QTableWidgetItem(val)
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                    self.table.setItem(i, table_col, item)
-    
-                if i in pareto_indices or i == best_idx:
-                    for j in range(len(headers) + 1):
-                        cell = self.table.item(i, j)
-                        if cell:
-                            cell.setBackground(QColor("#fff9d6"))
-    
-            # ----------------------------------------------------------
-            # --- Hide irrelevant columns ---
-            # ----------------------------------------------------------
-            keep_cols = {0}  # always keep ID
-    
-            # Count constraints from XML
-            num_constraints = 0
-            try:
-                if xml_path and os.path.isfile(xml_path):
-                    tree = ET.parse(xml_path)
-                    root = tree.getroot()
-                    num_constraints = len(root.findall("constraint_function"))
-            except Exception as e:
-                print(f"[RunDoE] Could not count constraints: {e}")
-                num_constraints = 0
-    
-            # Determine visible columns
-            if num_objectives == 1:
-                keep_cols.add(obj_cols[0] + 1)
-                if num_constraints > 0:
-                    keep_cols.add(feas_col + 1)
-            elif num_objectives == 2:
-                keep_cols.update({obj_cols[0] + 1, obj_cols[1] + 1})
-                if num_constraints > 0:
-                    keep_cols.add(feas_col + 1)
-    
-            if improvement_col is not None:
-                keep_cols.discard(improvement_col + 1)
-    
-            for j in range(len(headers) + 1):
-                self.table.setColumnHidden(j, j not in keep_cols)
-    
-            self._last_csv_mtime = mtime
-            self.table.scrollToBottom()
-    
-        except Exception as e:
-            print(f"[RunDoE] Failed to load DoE_history.csv: {e}")
-        
+
+        self._csv_updater.update(
+            csv_path=os.path.join(run_dir, "DoE_history.csv"),
+            xml_path=self._xml_path,
+            start_time=self.start_time,
+            dimension=self._dimension,
+            state=self.state,
+        )
 
     
     def _is_float(self, s: str) -> bool:
