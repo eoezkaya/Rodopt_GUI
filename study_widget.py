@@ -405,6 +405,11 @@ class Study(QWidget):
         self._dirty = False
         self._update_xml_label()
 
+        # after all tabs are (re)created and populated
+        if "General Settings" in self._widgets:
+            general_wrapper = self._widgets["General Settings"]
+            self.tabs.setCurrentWidget(general_wrapper)
+
     def _exit_app(self) -> None:
         if self._dirty:
             r = QMessageBox.warning(
