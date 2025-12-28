@@ -111,6 +111,17 @@ class ConstraintFunction(QWidget):
             parent=self.group_box,
         )
 
+        # --- NEW: training-data field hint + validation ---
+        if hasattr(self.file_fields, "_fields") and len(self.file_fields._fields) >= 2:
+            # index 1 == "Training data file"
+            _lbl_tr, edit_tr, _btn_tr = self.file_fields._fields[1]
+            edit_tr.setPlaceholderText("Specify a CSV file (*.csv)")
+            # connect change signal once; we re-validate on any change
+            edit_tr.textChanged.connect(self._on_training_file_changed)
+
+        # --------------------------------------------------
+        # Working dir, remote server, etc.
+        # --------------------------------------------------
         self.working_dir_field = DirectoryPathField(
             "Working directory",
             path=self._default_workdir,
@@ -208,26 +219,29 @@ class ConstraintFunction(QWidget):
     def _on_name_changed(self, text: str) -> None:
         """
         Validate constraint name:
-        - no whitespace
-        - only letters, digits, underscore
+          - must not be empty
+          - must not contain ANY whitespace
+          - only letters, digits, underscore allowed
         """
-        name = text.strip()
         import re
 
-        if name and re.fullmatch(r"[A-Za-z0-9_]+", name):
-            self._set_name_valid(True)
-        else:
-            self._set_name_valid(False)
+        name = text  # do NOT strip; "Constraint1 " should be invalid
 
-        # still emit the standard changed signal
-        self.changed.emit()
+        if not name or any(ch.isspace() for ch in name):
+            is_valid = False
+        else:
+            is_valid = bool(re.fullmatch(r"[A-Za-z0-9_]+", name))
+
+        self._set_name_valid(is_valid)
 
     def _set_name_valid(self, valid: bool) -> None:
         if self._name_valid == valid:
             return
         self._name_valid = valid
 
-        edit = self.name_field._edit  # StringField's QLineEdit
+        # underlying QLineEdit from StringField
+        edit = self.name_field._edit  # adapt if your StringField exposes it differently
+
         if valid:
             edit.setStyleSheet("")
             edit.setToolTip("")
@@ -237,6 +251,50 @@ class ConstraintFunction(QWidget):
                 "Invalid name. Use only letters, digits, and underscore; "
                 "no spaces or special characters."
             )
+
+    # --------------------------------------------------
+    # Training CSV validation (like ObjectiveFunction)
+    # --------------------------------------------------
+    def _on_training_file_changed(self, text: str) -> None:
+        """
+        Validate that the Training data file is a .csv and show a red border if not.
+        """
+        # find the training-data widgets (2nd entry)
+        if not hasattr(self.file_fields, "_fields") or len(self.file_fields._fields) < 2:
+            return
+
+        _lbl_tr, edit_tr, _btn_tr = self.file_fields._fields[1]
+
+        filename = (text or "").strip()
+        if not filename:
+            # empty is considered invalid
+            self._set_training_file_valid(
+                valid=False,
+                tooltip="Training data file is required and must be a .csv file.",
+                edit=edit_tr,
+            )
+            return
+
+        if filename.lower().endswith(".csv"):
+            self._set_training_file_valid(valid=True, tooltip="", edit=edit_tr)
+        else:
+            self._set_training_file_valid(
+                valid=False,
+                tooltip="Training data file must have .csv extension.",
+                edit=edit_tr,
+            )
+
+    def _set_training_file_valid(self, *, valid: bool, tooltip: str, edit) -> None:
+        """
+        Simple visual validation: red border on invalid, normal on valid.
+        """
+        if valid:
+            edit.setStyleSheet("")
+        else:
+            edit.setStyleSheet(
+                "QLineEdit { border: 2px solid red; border-radius: 3px; }"
+            )
+        edit.setToolTip(tooltip)
 
     # ==================================================
     # Core logic

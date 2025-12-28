@@ -137,6 +137,11 @@ class ObjectiveFunction(QWidget):
         # validate & normalize on change
         self.training_file.pathChanged.connect(self._on_training_file_changed)
 
+        # NEW: add user hint in the entry field
+        if hasattr(self.training_file, "_fields") and self.training_file._fields:
+            _label, edit, _btn = self.training_file._fields[0]
+            edit.setPlaceholderText("Specify a CSV file (*.csv)")
+
         self.design_file = FilePathField(
             "Design variables file",
             path="",
