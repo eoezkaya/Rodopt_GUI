@@ -45,6 +45,15 @@ class GeneralSettings(QWidget):
     ):
         super().__init__(parent)
 
+        # --- name validation state/style (NEW) ---
+        self._problem_name_valid = True
+        self._invalid_name_style = """
+        QLineEdit {
+            border: 2px solid red;
+            border-radius: 3px;
+        }
+        """
+
         # === Main GroupBox ===
         self.group_box = QGroupBox("General Settings", self)
         self.group_box.setMinimumWidth(700)
@@ -61,6 +70,8 @@ class GeneralSettings(QWidget):
             field_width=text_field_width,
             parent=self.group_box,
         )
+        # NEW: validate on change
+        self.problem_name_field.textChanged.connect(self._on_problem_name_changed)
 
         self.problem_type_field = StringOptionsField(
             "Problem type",
@@ -202,7 +213,7 @@ class GeneralSettings(QWidget):
             resp = QMessageBox.question(
                 self,
                 "Create Directory?",
-                f"The directory does not exist:\n\n{new_path}",
+                f"The directory does not exist. Shall we create: \n{new_path}?",
                 QMessageBox.StandardButton.Yes |
                 QMessageBox.StandardButton.No,
             )
@@ -287,3 +298,38 @@ class GeneralSettings(QWidget):
             self.working_dir_field.path = wd
 
         self._update_visibility_for_problem_type()
+
+    def _on_problem_name_changed(self, text: str) -> None:
+        """
+        Validate problem name:
+          - no whitespace
+          - only letters, digits, underscore
+        """
+        import re
+
+        name = text.strip()
+        is_valid = bool(name and re.fullmatch(r"[A-Za-z0-9_]+", name))
+
+        self._set_problem_name_valid(is_valid)
+
+        # preserve existing changed() behavior
+        self.changed.emit()
+
+    def _set_problem_name_valid(self, valid: bool) -> None:
+        if self._problem_name_valid == valid:
+            return
+        self._problem_name_valid = valid
+
+        # access underlying QLineEdit from StringField
+        # adjust attribute if your StringField exposes it differently
+        edit = self.problem_name_field._edit
+
+        if valid:
+            edit.setStyleSheet("")
+            edit.setToolTip("")
+        else:
+            edit.setStyleSheet(self._invalid_name_style)
+            edit.setToolTip(
+                "Invalid name. Use only letters, digits, and underscore; "
+                "no spaces or special characters."
+            )
