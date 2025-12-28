@@ -70,8 +70,8 @@ class Parameters(QWidget):
     Excel-like parameters editor with 5 columns:
       name | type | increment | lower bound | upper bound
     """
+    changed = pyqtSignal()
     rowCountChanged = pyqtSignal(int)
-    changed = pyqtSignal()  # universal signal for DoE dirty tracking
 
     COL_NAME = 0
     COL_TYPE = 1
@@ -81,6 +81,14 @@ class Parameters(QWidget):
 
     def __init__(self, *, initial_rows: int = 2, parent: Optional[QWidget] = None):
         super().__init__(parent)
+
+        # --- NEW: parameter-name invalid style ---
+        self._invalid_param_name_style = """
+        QLineEdit {
+            border: 2px solid red;
+            border-radius: 3px;
+        }
+        """
 
         self.table = QTableWidget(self)
         self.table.setColumnCount(5)
@@ -162,6 +170,8 @@ class Parameters(QWidget):
 
         name_w = QLineEdit(self)
         name_w.setText(name_text)
+        # NEW: validate as user types
+        name_w.textChanged.connect(self._on_param_name_changed)
         self.table.setCellWidget(r, self.COL_NAME, name_w)
 
         type_w = QComboBox(self)
@@ -234,6 +244,38 @@ class Parameters(QWidget):
                 if self.table.cellWidget(r, c) is child:
                     return r
         return -1
+
+    # ==================================================
+    # NEW: parameter-name validation
+    # ==================================================
+    def _on_param_name_changed(self, text: str) -> None:
+        """
+        Parameter name is invalid if:
+          - empty
+          - contains ANY whitespace (leading, trailing, or inside)
+          - contains characters other than letters, digits, underscore
+        """
+        name = text  # do NOT strip, so "x1 " stays invalid
+
+        if not name or any(ch.isspace() for ch in name):
+            is_valid = False
+        else:
+            is_valid = bool(re.fullmatch(r"[A-Za-z0-9_]+", name))
+
+        editor = self.sender()
+        if isinstance(editor, QLineEdit):
+            if is_valid:
+                editor.setStyleSheet("")
+                editor.setToolTip("")
+            else:
+                editor.setStyleSheet(self._invalid_param_name_style)
+                editor.setToolTip(
+                    "Invalid name. Use only letters, digits, and underscore; "
+                    "no spaces or special characters."
+                )
+
+        # keep existing behavior that editing marks widget dirty
+        self.changed.emit()
 
     # ---------- Public API ----------
     def row_count(self) -> int:

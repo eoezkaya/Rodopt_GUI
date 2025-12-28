@@ -302,17 +302,23 @@ class GeneralSettings(QWidget):
     def _on_problem_name_changed(self, text: str) -> None:
         """
         Validate problem name:
-          - no whitespace
-          - only letters, digits, underscore
+          - must not be empty
+          - must not contain ANY whitespace (spaces, tabs, etc.)
+          - only letters, digits, underscore allowed
         """
         import re
 
-        name = text.strip()
-        is_valid = bool(name and re.fullmatch(r"[A-Za-z0-9_]+", name))
+        # do NOT strip; we want to catch trailing/leading spaces as invalid
+        name = text
+
+        # reject if any whitespace character present
+        if not name or any(ch.isspace() for ch in name):
+            is_valid = False
+        else:
+            is_valid = bool(re.fullmatch(r"[A-Za-z0-9_]+", name))
 
         self._set_problem_name_valid(is_valid)
 
-        # preserve existing changed() behavior
         self.changed.emit()
 
     def _set_problem_name_valid(self, valid: bool) -> None:
@@ -321,8 +327,7 @@ class GeneralSettings(QWidget):
         self._problem_name_valid = valid
 
         # access underlying QLineEdit from StringField
-        # adjust attribute if your StringField exposes it differently
-        edit = self.problem_name_field._edit
+        edit = self.problem_name_field._edit  # adjust if you expose it differently
 
         if valid:
             edit.setStyleSheet("")

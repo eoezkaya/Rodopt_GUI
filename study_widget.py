@@ -160,6 +160,7 @@ class Study(QWidget):
 
         par = Parameters(initial_rows=3)
         par.rowCountChanged.connect(self._mark_dirty)
+        par.changed.connect(self._mark_dirty)   # <--- NEW: mark study dirty on any param change
         self._add_tab(par, "Parameters", align_top=False, closable=False)
 
         self._propagate_problem_type()
