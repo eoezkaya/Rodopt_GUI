@@ -40,14 +40,14 @@ class RemoteServerWidget(QWidget):
 
         # --- fields ---
         self.hostname_field = StringField(
-            "Host",                      # was "host"
+            "Host",                      # CHANGED: label text
             default=default_hostname,
             label_width=label_width,
             field_width=field_width,
             parent=self.group_box,
         )
         self.username_field = StringField(
-            "User",                      # was "user"
+            "User",                      # CHANGED: label text
             default=default_username,
             label_width=label_width,
             field_width=field_width,
@@ -123,19 +123,20 @@ class RemoteServerWidget(QWidget):
 
     # -------- public helpers --------
     def snapshot(self) -> Dict[str, str]:
+        # CHANGED: keys are host / user, not hostname / username
         return {
-            "hostname": self.hostname_field.text,
-            "username": self.username_field.text,
+            "host": self.hostname_field.text,
+            "user": self.username_field.text,
             "port": self.port_field.text,
             "remote_working_directory": self.working_dir_field.path,
         }
 
     def get_payload(self) -> Dict[str, str]:
         data = self.snapshot()
-        if not data["hostname"].strip():
-            raise ValueError("RemoteServerWidget: Hostname is required.")
-        if not data["username"].strip():
-            raise ValueError("RemoteServerWidget: Username is required.")
+        if not data["host"].strip():
+            raise ValueError("RemoteServerWidget: Host is required.")
+        if not data["user"].strip():
+            raise ValueError("RemoteServerWidget: User is required.")
         if not data["port"].strip():
             raise ValueError("RemoteServerWidget: Port is required.")
         if not data["remote_working_directory"].strip():
@@ -171,15 +172,17 @@ class RemoteServerWidget(QWidget):
         root = ET.Element(root_tag)
         
         children = [
-            self.hostname_field.to_xml(attr_label=label_attr),
-            self.username_field.to_xml(attr_label=label_attr),
+            # hostname -> <host>
+            self.hostname_field.to_xml(tag="host", attr_label=label_attr),
+            # username -> <user>
+            self.username_field.to_xml(tag="user", attr_label=label_attr),
             self.port_field.to_xml(attr_label=label_attr),
             self.working_dir_field.to_xml(attr_label=label_attr),
         ]
-        for child in children:
-            text = (child.text or "").strip()
-            if include_empty or text:
-                root.append(child)
+
+        for ch in children:
+            if ch is not None:
+                root.append(ch)
         return root
 
     def to_xml_string(self, **kwargs) -> str:
@@ -191,16 +194,16 @@ class RemoteServerWidget(QWidget):
         Load remote server settings from XML:
 
         <remote_server>
-          <hostname>...</hostname>
-          <username>...</username>
+          <host>...</host>
+          <user>...</user>
           <port>22</port>
           <remote_working_directory>/path</remote_working_directory>
         </remote_server>
         """
         tag_to_widget = {
             # match XML tag names exactly (lowercased)
-            "hostname": self.hostname_field,
-            "username": self.username_field,
+            "host": self.hostname_field,
+            "user": self.username_field,
             "port": self.port_field,
             "remote_working_directory": self.working_dir_field,
         }

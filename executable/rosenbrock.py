@@ -15,7 +15,7 @@ def main():
     dim = 2
     input_filename = f"dv.dat"
     output_filename = f"rosenbrock.dat"
-    delay_seconds = 11  # Delay in seconds
+    delay_seconds = 21  # Delay in seconds
 
     try:
         # Read design variables

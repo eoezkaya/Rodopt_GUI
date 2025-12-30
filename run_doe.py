@@ -9,7 +9,7 @@ import csv
 from pathlib import Path
 import matplotlib.pyplot as plt 
 import xml.etree.ElementTree as ET
-from PyQt6.QtGui import QPixmap, QTransform, QIcon
+from PyQt6.QtGui import QPixmap, QTransform, QIcon, QColor
 from csv_table_updater import CSVTableUpdater
 from config_store import load_executable
 from config_store import save_executable
@@ -711,6 +711,7 @@ class RunDoE(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to show design details:\n{e}")
         
 
+    
 
     # ==========================================================
     # === Helpers ===
