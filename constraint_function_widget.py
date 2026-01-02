@@ -75,6 +75,17 @@ class ConstraintFunction(QWidget):
         )
         self.name_field.textChanged.connect(self._on_name_changed)
 
+        # NEW: Alias field
+        self.alias_field = StringField(
+            "Alias",
+            default="",
+            label_width=label_width,
+            field_width=field_width,
+            parent=self.group_box,
+        )
+        # CHANGED: call our handler (still emits changed)
+        self.alias_field.textChanged.connect(self._on_alias_changed)
+
         self.execution_location_field = StringOptionsField(
             "Execution location",
             value=self._default_execution_location,
@@ -119,6 +130,9 @@ class ConstraintFunction(QWidget):
             # connect change signal once; we re-validate on any change
             edit_tr.textChanged.connect(self._on_training_file_changed)
 
+        # NEW: apply initial state
+        self._sync_executable_with_alias()
+
         # --------------------------------------------------
         # Working dir, remote server, etc.
         # --------------------------------------------------
@@ -156,6 +170,7 @@ class ConstraintFunction(QWidget):
         )
 
         inner_layout.addWidget(self.name_field)
+        inner_layout.addWidget(self.alias_field)  # NEW: Add alias field to layout
         inner_layout.addWidget(self.execution_location_field)
         inner_layout.addWidget(self.definition_field)
         inner_layout.addWidget(self.file_fields)
@@ -302,6 +317,7 @@ class ConstraintFunction(QWidget):
 
     def clear_fields(self) -> None:
         self.name_field.text = self._default_name
+        self.alias_field.text = ""  # NEW: Clear alias field
         self.execution_location_field.value = self._default_execution_location
         self.definition_field.text = ""
         self.file_fields.set_paths(list(self._default_paths))
@@ -316,6 +332,7 @@ class ConstraintFunction(QWidget):
         paths = self.file_fields.paths
         data: Dict[str, str | Dict[str, str]] = {
             "name": self.name_field.text.strip(),
+            "alias": self.alias_field.text.strip(),  # NEW: Include alias in snapshot
             "execution_location": self.execution_location_field.value.strip(),
             "definition": self.definition_field.text.strip(),
             "executable_filename": paths[0],
@@ -340,6 +357,7 @@ class ConstraintFunction(QWidget):
                 ET.SubElement(root, tag).text = text
 
         add("name", self.name_field.text.strip())
+        add("alias", self.alias_field.text.strip())  # NEW: Add alias to XML
         add("execution_location", self.execution_location_field.value.strip())
 
         s = self.definition_field.text.strip()
@@ -371,6 +389,7 @@ class ConstraintFunction(QWidget):
             return el.text.strip() if el is not None and el.text else ""
 
         self.name_field.text = get("name") or self._default_name
+        self.alias_field.text = get("alias")  # NEW: Load alias from XML
         loc = get("execution_location") or self._default_execution_location
         self.execution_location_field.value = loc
         self.remote_server_widget.setVisible(loc.lower() == "remote")
@@ -406,6 +425,45 @@ class ConstraintFunction(QWidget):
             value.strip().lower() == "remote"
         )
         self.changed.emit()
+
+    # --------------------------------------------------
+    # Alias behavior: disables executable when alias is set
+    # --------------------------------------------------
+    def _on_alias_changed(self, _text: str) -> None:
+        self._sync_executable_with_alias()
+        self.changed.emit()
+
+    def _sync_executable_with_alias(self) -> None:
+        """
+        If alias is non-empty:
+          - clear 'Executable file name' (index 0)
+          - disable its edit + browse button
+        Else:
+          - re-enable it
+        """
+        if not hasattr(self, "file_fields") or not hasattr(self.file_fields, "_fields"):
+            return
+        if not self.file_fields._fields:
+            return
+
+        alias = (self.alias_field.text or "")
+        alias_active = bool(alias.strip())
+
+        # index 0 == "Executable file name"
+        _lbl_exe, edit_exe, btn_exe = self.file_fields._fields[0]
+
+        if alias_active:
+            # clear value
+            edit_exe.blockSignals(True)
+            edit_exe.setText("")
+            edit_exe.blockSignals(False)
+
+            # disable editing + browse
+            edit_exe.setEnabled(False)
+            btn_exe.setEnabled(False)
+        else:
+            edit_exe.setEnabled(True)
+            btn_exe.setEnabled(True)
 
     # --- public API for Study ---
 
