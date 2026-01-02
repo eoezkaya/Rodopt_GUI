@@ -4,7 +4,7 @@ from typing import Optional, Dict
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QToolButton,
     QApplication, QTabWidget, QFileDialog, QMessageBox,
-    QTabBar, QLabel
+    QTabBar, QLabel, QScrollArea  # <-- NEW
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
@@ -43,6 +43,26 @@ class Study(QWidget):
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
+
+        # ==============================================================
+        # Make Study scrollable (NEW)
+        # ==============================================================
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        content = QWidget()
+        scroll.setWidget(content)
+
+        outer.addWidget(scroll)
+
+        # IMPORTANT: use 'content' as the widget that holds the existing Study layout
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(10, 10, 10, 10)
 
         # ------------------------------------------------------------
         # Shared state
@@ -115,12 +135,10 @@ class Study(QWidget):
         top_row.addStretch(1)
         top_row.addWidget(self._xml_label)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
         layout.addLayout(top_row)
         layout.addWidget(self.tabs)
         layout.addLayout(btn_row)
-        self.setLayout(layout)
+        self.setLayout(outer)
 
         # ------------------------------------------------------------
         # State
