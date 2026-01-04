@@ -38,7 +38,7 @@ class ObjectiveFunction(QWidget):
         *,
         label_width: int = 180,
         field_width: int = 360,
-        button_size: int = 32,
+        button_size: int = 40,
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
@@ -76,6 +76,7 @@ class ObjectiveFunction(QWidget):
             field_width=field_width,
             parent=self.group_box,
         )
+        self.name_field.textChanged.connect(lambda _t: self.changed.emit())
 
         self._name_valid = True
 
@@ -85,6 +86,16 @@ class ObjectiveFunction(QWidget):
             border-radius: 3px;
         }
         """
+
+        # NEW: Alias field
+        self.alias_field = StringField(
+            "Alias",
+            default="",
+            label_width=label_width,
+            field_width=field_width,
+            parent=self.group_box,
+        )
+        self.alias_field.textChanged.connect(self._on_alias_changed)
 
         self.execution_location_field = StringOptionsField(
             "Execution location",
@@ -114,6 +125,9 @@ class ObjectiveFunction(QWidget):
             field_width=field_width,
             parent=self.group_box,
         )
+
+        # NEW: apply initial state (in case alias has a default)
+        self._sync_executable_with_alias()
 
         self.grad_exec_file = FilePathField(
             "Gradient executable file name",
@@ -204,6 +218,7 @@ class ObjectiveFunction(QWidget):
 
         for w in (
             self.name_field,
+            self.alias_field,  # NEW: ensure alias_field is added to the layout
             self.execution_location_field,
             self.derivative_info_field,
             self.exec_file,
@@ -279,6 +294,7 @@ class ObjectiveFunction(QWidget):
     # ==============================================================
     def clear_fields(self) -> None:
         self.name_field.text = self._default_name
+        self.alias_field.text = ""  # NEW: clear alias field
         self.execution_location_field.value = self._default_execution_location
         self.derivative_info_field.value = self._default_derivative_info
 
@@ -299,12 +315,47 @@ class ObjectiveFunction(QWidget):
         )
         self.changed.emit()
 
+    # --------------------------------------------------
+    # Alias behavior: disables executable when alias is set
+    # --------------------------------------------------
+    def _on_alias_changed(self, _text: str) -> None:
+        self._sync_executable_with_alias()
+        self.changed.emit()
+
+    def _sync_executable_with_alias(self) -> None:
+        """
+        If alias is non-empty:
+          - clear 'Executable file name'
+          - disable its edit + browse button
+        Else:
+          - re-enable it
+        """
+        alias_active = bool((self.alias_field.text or "").strip())
+
+        if not hasattr(self.exec_file, "_fields") or not self.exec_file._fields:
+            return
+
+        # FilePathField stores tuples like (label, edit, btn)
+        _lbl, edit, btn = self.exec_file._fields[0]
+
+        if alias_active:
+            edit.blockSignals(True)
+            edit.setText("")
+            edit.blockSignals(False)
+
+            edit.setEnabled(False)
+            btn.setEnabled(False)
+        else:
+            edit.setEnabled(True)
+            btn.setEnabled(True)
+
     # ==============================================================
     # Snapshot / XML
     # ==============================================================
     def snapshot(self) -> Dict[str, str | Dict[str, str]]:
         data = {
             "name": self.name_field.text,
+            "alias": self.alias_field.text,  # NEW
             "execution_location": self.execution_location_field.value,
             "executable_filename": self.exec_file.path,
             "training_data_filename": self.training_file.path,
@@ -328,6 +379,7 @@ class ObjectiveFunction(QWidget):
         root = ET.Element(root_tag)
 
         ET.SubElement(root, "name").text = self.name_field.text
+        ET.SubElement(root, "alias").text = self.alias_field.text  # NEW
         ET.SubElement(root, "execution_location").text = self.execution_location_field.value
 
         if self._problem_type == "Optimization":
@@ -360,6 +412,7 @@ class ObjectiveFunction(QWidget):
             return el.text.strip() if el is not None and el.text else ""
 
         self.name_field.text = get("name") or self._default_name
+        self.alias_field.text = get("alias")  # NEW
         self.execution_location_field.value = (
             get("execution_location") or self._default_execution_location
         )
