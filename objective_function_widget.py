@@ -97,6 +97,16 @@ class ObjectiveFunction(QWidget):
         )
         self.alias_field.textChanged.connect(self._on_alias_changed)
 
+        # NEW: tooltip ("balloon") for Alias field
+        alias_edit = self.alias_field.findChild(QLineEdit)
+        if alias_edit is not None:
+            alias_edit.setToolTip(
+                "Alias (optional): Delegate evaluation to another process.\n"
+                "Enter the name of an existing objective/constraint that will also compute "
+                "this objective's value.\n"
+                "When set, local executable and design-file inputs are unneccesary and disabled."
+            )
+
         self.execution_location_field = StringOptionsField(
             "Execution location",
             value=self._default_execution_location,
@@ -125,6 +135,17 @@ class ObjectiveFunction(QWidget):
             field_width=field_width,
             parent=self.group_box,
         )
+
+        # NEW: tooltip for Executable file name entry
+        if hasattr(self.exec_file, "_fields") and self.exec_file._fields:
+            _lbl, edit, _btn = self.exec_file._fields[0]
+            if isinstance(edit, QLineEdit):
+                edit.setToolTip(
+                    "Executable file used to evaluate this objective.\n"
+                    "Can be any runnable program (binary), a shell script (.sh), or a Python script (.py).\n"
+                    "It will be executed during runs to produce the objective output.\n"
+                    "Note: If an Alias is provided, this field is not used and becomes disabled."
+                )
 
         # NEW: apply initial state (in case alias has a default)
         self._sync_executable_with_alias()

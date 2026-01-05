@@ -562,13 +562,38 @@ class RunDoE(QWidget):
             pareto_points.sort(key=lambda p: p[0])
     
             # --- plot ---
-            plt.figure(figsize=(6, 5))
+            plt.figure(figsize=(10, 8))
             if infeasible_points:
                 x_infeas, y_infeas = zip(*infeasible_points)
                 plt.scatter(x_infeas, y_infeas, color="red", label="Unfeasible Samples", marker="x")
+                # NEW: label each point with its row number (1-based)
+                for (x, y) in infeasible_points:
+                    # row number = first matching occurrence in data order
+                    idx0 = next((i for i, p in enumerate(infeasible_points) if p == (x, y)), None)
+                    if idx0 is not None:
+                        plt.annotate(
+                            str(idx0 + 1),
+                            (x, y),
+                            textcoords="offset points",
+                            xytext=(4, 2),
+                            fontsize=7,
+                            color="red",
+                        )
             if feasible_points:
                 x_feas, y_feas = zip(*feasible_points)
                 plt.scatter(x_feas, y_feas, color="blue", label="Feasible Samples", marker="o")
+                # NEW: label each point with its row number (1-based)
+                for (x, y) in feasible_points:
+                    idx0 = next((i for i, p in enumerate(feasible_points) if p == (x, y)), None)
+                    if idx0 is not None:
+                        plt.annotate(
+                            str(idx0 + 1),
+                            (x, y),
+                            textcoords="offset points",
+                            xytext=(4, 2),
+                            fontsize=7,
+                            color="blue",
+                        )
             if pareto_points:
                 px, py = zip(*pareto_points)
                 plt.plot(px, py, color="green", marker="o", linewidth=2.5, label="Pareto Front")
