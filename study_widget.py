@@ -232,37 +232,39 @@ class Study(QWidget):
         return f"Constraint{i}"
 
     def _add_objective_tab(self, *, from_element: ET.Element | None = None) -> None:
-        name = self._next_objective_name()
-
         obj = ObjectiveFunction(
             label_width=self._label_width,
             field_width=self._field_width,
             button_size=self._button_size,
         )
 
-        # Objective identity is owned by Study
-        obj.name_field.text = name
-        obj.name_field.setEnabled(True)
-
         if from_element is not None:
+            # Load everything, including <name>
             obj.from_xml(from_element)
-            obj.name_field.text = name  # enforce consistency
 
-        self._add_tab(obj, name, align_top=True, closable=True)
+            # Use XML name if present; otherwise fall back to ObjectiveN
+            xml_name_el = from_element.find("name")
+            xml_name = (xml_name_el.text or "").strip() if xml_name_el is not None else ""
+            key = xml_name or self._next_objective_name()
+            # do NOT overwrite obj.name_field here
+        else:
+            key = self._next_objective_name()
+            obj.name_field.text = key
 
-        wrapper = self._widgets[name]
+        self._add_tab(obj, key, align_top=True, closable=True)
 
-        # keep tab label in sync with name field
+        wrapper = self._widgets[key]
+
+        # keep tab title in sync with user edits
         obj.name_field.textChanged.connect(
-            lambda text, w=wrapper: self._sync_tab_title(w, text)
+            lambda text, w=wrapper: self._sync_objective_tab_title(w, text)
         )
-
         obj.changed.connect(self._mark_dirty)
 
         self._propagate_problem_type()
         self.tabs.setCurrentWidget(wrapper)
 
-    def _sync_tab_title(self, wrapper: QWidget, title: str) -> None:
+    def _sync_objective_tab_title(self, wrapper: QWidget, title: str) -> None:
         idx = self.tabs.indexOf(wrapper)
         if idx != -1:
             self.tabs.setTabText(idx, title.strip() or "Objective")

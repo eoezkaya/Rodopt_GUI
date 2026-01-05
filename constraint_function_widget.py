@@ -461,9 +461,17 @@ class ConstraintFunction(QWidget):
             # disable editing + browse
             edit_exe.setEnabled(False)
             btn_exe.setEnabled(False)
+
+            # NEW: visually indicate inactive
+            edit_exe.setStyleSheet(
+                "QLineEdit { background: #f0f0f0; color: #666; }"
+            )
         else:
             edit_exe.setEnabled(True)
             btn_exe.setEnabled(True)
+
+            # NEW: restore normal style
+            edit_exe.setStyleSheet("")
 
     # --- public API for Study ---
 

@@ -164,15 +164,19 @@ class ObjectiveFunction(QWidget):
             field_width=field_width,
             parent=self.group_box,
         )
+        # NEW: validate filename
+        self.design_file.pathChanged.connect(lambda _p: self._validate_filename_field(self.design_file))
 
         self.output_file = FilePathField(
             "Output file",
             path="",
-            select_mode="open_file",
+            select_mode="save_file",
             label_width=label_width,
             field_width=field_width,
             parent=self.group_box,
         )
+        # NEW: validate filename
+        self.output_file.pathChanged.connect(lambda _p: self._validate_filename_field(self.output_file))
 
         self.grad_output_file = FilePathField(
             "Gradient output file",
@@ -318,36 +322,148 @@ class ObjectiveFunction(QWidget):
     # --------------------------------------------------
     # Alias behavior: disables executable when alias is set
     # --------------------------------------------------
-    def _on_alias_changed(self, _text: str) -> None:
-        self._sync_executable_with_alias()
+    def _on_alias_changed(self, text: str) -> None:
+        """
+        Alias rules:
+          - empty is allowed
+          - if non-empty: only letters/digits/underscore; no whitespace
+        Invalid alias is shown with a red border.
+        """
+        alias = text  # do NOT strip; "abc " should be invalid
+
+        if not alias:
+            valid = True
+        elif any(ch.isspace() for ch in alias):
+            valid = False
+        else:
+            valid = bool(re.fullmatch(r"[A-Za-z0-9_]+", alias))
+
+        # apply red-border feedback to alias field's QLineEdit
+        edit = self.alias_field.findChild(QLineEdit)
+        if edit is not None:
+            if valid:
+                edit.setStyleSheet("")
+                edit.setToolTip("")
+            else:
+                edit.setStyleSheet(self._invalid_name_style)
+                edit.setToolTip(
+                    "Invalid alias. Use only letters, digits, and underscore; "
+                    "no spaces or special characters."
+                )
+
+        # Only disable/clear executable/design fields if alias is non-empty AND valid
+        if valid and alias.strip():
+            self._sync_executable_with_alias()
+        else:
+            # if alias is empty OR invalid, ensure fields are enabled
+            # (so user can still provide executable paths)
+            self.alias_field.textChanged.disconnect(self._on_alias_changed)  # avoid recursion if any
+            try:
+                # re-enable without clearing if alias invalid/empty
+                alias_before = self.alias_field.text
+                self.alias_field.text = alias_before
+            finally:
+                self.alias_field.textChanged.connect(self._on_alias_changed)
+
+            # force alias_active = False behavior by temporarily treating alias as empty
+            # simplest: manually enable the fields here
+            inactive_style = "QLineEdit { background: #f0f0f0; color: #666; }"
+
+            def _enable_file_field(field) -> None:
+                if field is None or not hasattr(field, "_fields") or not field._fields:
+                    return
+                _lbl, e, b = field._fields[0]
+                e.setEnabled(True)
+                b.setEnabled(True)
+                # don't clobber red-border validation on other fields; only remove inactive gray
+                if e.styleSheet() == inactive_style:
+                    e.setStyleSheet("")
+
+            _enable_file_field(getattr(self, "exec_file", None))
+            _enable_file_field(getattr(self, "design_file", None))
+
         self.changed.emit()
 
     def _sync_executable_with_alias(self) -> None:
         """
         If alias is non-empty:
-          - clear 'Executable file name'
-          - disable its edit + browse button
+          - clear and disable 'Executable file name'
+          - clear and disable 'Design variables file' (when available)
         Else:
-          - re-enable it
+          - re-enable both
         """
         alias_active = bool((self.alias_field.text or "").strip())
+        inactive_style = "QLineEdit { background: #f0f0f0; color: #666; }"
 
-        if not hasattr(self.exec_file, "_fields") or not self.exec_file._fields:
+        def _toggle_file_field(field, *, clear: bool) -> None:
+            if field is None or not hasattr(field, "_fields") or not field._fields:
+                return
+            _lbl, edit, btn = field._fields[0]
+
+            if alias_active:
+                # CHANGED: if inactive, it must be empty (always clear)
+                try:
+                    field.path = ""
+                except Exception:
+                    pass
+                edit.blockSignals(True)
+                edit.setText("")
+                edit.blockSignals(False)
+
+                edit.setEnabled(False)
+                btn.setEnabled(False)
+                edit.setStyleSheet(inactive_style)
+            else:
+                edit.setEnabled(True)
+                btn.setEnabled(True)
+                edit.setStyleSheet("")
+
+        # Executable file (always exists when this is called)
+        _toggle_file_field(getattr(self, "exec_file", None), clear=True)
+
+        # Design variables file (may not exist yet during __init__)
+        _toggle_file_field(getattr(self, "design_file", None), clear=True)
+
+    # --------------------------------------------------
+    # Filename validation for design/output files
+    # --------------------------------------------------
+    def _validate_filename_field(self, field: "FilePathField") -> None:
+        """
+        Validate file name (basename) for Design variables file / Output file.
+
+        Regex:
+          ^[A-Za-z0-9][A-Za-z0-9 _.-]{0,198}[A-Za-z0-9]$
+        """
+        if field is None or not hasattr(field, "_fields") or not field._fields:
             return
 
-        # FilePathField stores tuples like (label, edit, btn)
-        _lbl, edit, btn = self.exec_file._fields[0]
+        # underlying QLineEdit in FilePathField
+        _lbl, edit, _btn = field._fields[0]
+        if not isinstance(edit, QLineEdit):
+            return
 
-        if alias_active:
-            edit.blockSignals(True)
-            edit.setText("")
-            edit.blockSignals(False)
+        path = (field.path or "").strip()
+        # allow empty here (so user can decide), but mark invalid if non-empty and bad
+        if not path:
+            edit.setStyleSheet("")
+            edit.setToolTip("")
+            return
 
-            edit.setEnabled(False)
-            btn.setEnabled(False)
+        import os
+        name = os.path.basename(path)
+
+        pattern = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _\.-]{0,198}[A-Za-z0-9]$")
+        ok = bool(pattern.fullmatch(name))
+
+        if ok:
+            edit.setStyleSheet("")
+            edit.setToolTip("")
         else:
-            edit.setEnabled(True)
-            btn.setEnabled(True)
+            edit.setStyleSheet(self._invalid_name_style)
+            edit.setToolTip(
+                "Invalid filename. Allowed: letters/digits; may include space, underscore, dot, hyphen; "
+                "must start and end with a letter/digit; length 2-200."
+            )
 
     # ==============================================================
     # Snapshot / XML
@@ -375,31 +491,34 @@ class ObjectiveFunction(QWidget):
 
         return data
 
-    def to_xml(self, *, root_tag: str = "objective_function") -> ET.Element:
-        root = ET.Element(root_tag)
+    def to_xml(self, *, include_empty: bool = False) -> ET.Element:
+        root = ET.Element("objective_function")
 
-        ET.SubElement(root, "name").text = self.name_field.text
-        ET.SubElement(root, "alias").text = self.alias_field.text  # NEW
-        ET.SubElement(root, "execution_location").text = self.execution_location_field.value
+        def add(tag: str, text: str):
+            if text or include_empty:
+                ET.SubElement(root, tag).text = text
+
+        add("name", self.name_field.text.strip())
+
+        # CHANGED: write <alias> only if non-empty (or include_empty=True)
+        alias = self.alias_field.text.strip()
+        if alias or include_empty:
+            add("alias", alias)
+
+        add("execution_location", self.execution_location_field.value)
 
         if self._problem_type == "Optimization":
-            ET.SubElement(
-                root, "derivative_information"
-            ).text = self.derivative_info_field.value
+            add("derivative_information", self.derivative_info_field.value)
 
             if self.derivative_info_field.value == "Gradient-enhanced":
-                ET.SubElement(
-                    root, "gradient_executable_filename"
-                ).text = self.grad_exec_file.path
-                ET.SubElement(
-                    root, "gradient_output_filename"
-                ).text = self.grad_output_file.path
+                add("gradient_executable_filename", self.grad_exec_file.path)
+                add("gradient_output_filename", self.grad_output_file.path)
 
-        ET.SubElement(root, "executable_filename").text = self.exec_file.path
-        ET.SubElement(root, "training_data_filename").text = self.training_file.path
-        ET.SubElement(root, "design_vector_filename").text = self.design_file.path
-        ET.SubElement(root, "output_filename").text = self.output_file.path
-        ET.SubElement(root, "working_directory").text = self.working_dir_field.path
+        add("executable_filename", self.exec_file.path)
+        add("training_data_filename", self.training_file.path)
+        add("design_vector_filename", self.design_file.path)
+        add("output_filename", self.output_file.path)
+        add("working_directory", self.working_dir_field.path)
 
         if self.execution_location_field.value == "remote":
             root.append(self.remote_server_widget.to_xml("remote_server"))

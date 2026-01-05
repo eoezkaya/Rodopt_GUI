@@ -9,7 +9,7 @@ import csv
 from pathlib import Path
 import matplotlib.pyplot as plt 
 import xml.etree.ElementTree as ET
-from PyQt6.QtGui import QPixmap, QTransform, QIcon, QColor
+from PyQt6.QtGui import QPixmap, QTransform, QIcon
 from csv_table_updater import CSVTableUpdater
 from config_store import load_executable
 from config_store import save_executable
@@ -146,7 +146,7 @@ class RunDoE(QWidget):
         # ==========================================================
         # === Main group box ===
         # ==========================================================
-        self.group_box = QGroupBox("Design of Experiment", self)
+        self.group_box = QGroupBox("", self)
         self.group_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.group_box.setMinimumWidth(900)
         self.group_box.setMaximumWidth(2000)
@@ -711,7 +711,6 @@ class RunDoE(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to show design details:\n{e}")
         
 
-    
 
     # ==========================================================
     # === Helpers ===
