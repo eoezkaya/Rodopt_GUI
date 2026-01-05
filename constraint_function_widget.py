@@ -4,7 +4,7 @@ from typing import Optional, Dict
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QApplication,
-    QSizePolicy, QGroupBox, QPushButton
+    QSizePolicy, QGroupBox, QPushButton, QLineEdit
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 from xml.etree import ElementTree as ET
@@ -129,6 +129,17 @@ class ConstraintFunction(QWidget):
             edit_tr.setPlaceholderText("Specify a CSV file (*.csv)")
             # connect change signal once; we re-validate on any change
             edit_tr.textChanged.connect(self._on_training_file_changed)
+
+        # NEW: validate filename for Design variables file (index 2) and Output file (index 3)
+        if hasattr(self.file_fields, "_fields") and self.file_fields._fields:
+            if len(self.file_fields._fields) > 2:
+                _lbl, edit, _btn = self.file_fields._fields[2]
+                if isinstance(edit, QLineEdit):
+                    edit.textChanged.connect(lambda _t: self._validate_filename_field(2))
+            if len(self.file_fields._fields) > 3:
+                _lbl, edit, _btn = self.file_fields._fields[3]
+                if isinstance(edit, QLineEdit):
+                    edit.textChanged.connect(lambda _t: self._validate_filename_field(3))
 
         # NEW: apply initial state
         self._sync_executable_with_alias()
@@ -311,6 +322,49 @@ class ConstraintFunction(QWidget):
             )
         edit.setToolTip(tooltip)
 
+    # --------------------------------------------------
+    # Filename validation for design/output files
+    # --------------------------------------------------
+    def _validate_filename_field(self, index: int) -> None:
+        """
+        Validate file name (basename) for:
+          - index 2: Design variables file
+          - index 3: Output file
+
+        Regex:
+          ^[A-Za-z0-9][A-Za-z0-9 _.-]{0,198}[A-Za-z0-9]$
+        """
+        if not hasattr(self, "file_fields") or not hasattr(self.file_fields, "_fields"):
+            return
+        if index >= len(self.file_fields._fields):
+            return
+
+        _lbl, edit, _btn = self.file_fields._fields[index]
+        if not isinstance(edit, QLineEdit):
+            return
+
+        path = (edit.text() or "").strip()
+
+        # allow empty (no error styling)
+        if not path:
+            edit.setStyleSheet("")
+            edit.setToolTip("")
+            return
+
+        name = os.path.basename(path)
+        pattern = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _\.-]{0,198}[A-Za-z0-9]$")
+        ok = bool(pattern.fullmatch(name))
+
+        if ok:
+            edit.setStyleSheet("")
+            edit.setToolTip("")
+        else:
+            edit.setStyleSheet(self._invalid_name_style)
+            edit.setToolTip(
+                "Invalid filename. Allowed: letters/digits; may include space, underscore, dot, hyphen; "
+                "must start and end with a letter/digit; length 2-200."
+            )
+
     # ==================================================
     # Core logic
     # ==================================================
@@ -429,49 +483,74 @@ class ConstraintFunction(QWidget):
     # --------------------------------------------------
     # Alias behavior: disables executable when alias is set
     # --------------------------------------------------
-    def _on_alias_changed(self, _text: str) -> None:
+    def _on_alias_changed(self, text: str) -> None:
+        """
+        Alias rules:
+          - empty is allowed
+          - if non-empty: only letters/digits/underscore; no whitespace
+        Invalid alias is shown with a red border.
+        """
+        alias = text  # do NOT strip; "abc " should be invalid
+
+        if not alias:
+            valid = True
+        elif any(ch.isspace() for ch in alias):
+            valid = False
+        else:
+            valid = bool(re.fullmatch(r"[A-Za-z0-9_]+", alias))
+
+        # apply red-border feedback to alias field's QLineEdit
+        edit = self.alias_field.findChild(QLineEdit)
+        if edit is not None:
+            if valid:
+                edit.setStyleSheet("")
+                edit.setToolTip("")
+            else:
+                edit.setStyleSheet(self._invalid_name_style)
+                edit.setToolTip(
+                    "Invalid alias. Use only letters, digits, and underscore; "
+                    "no spaces or special characters."
+                )
+
         self._sync_executable_with_alias()
         self.changed.emit()
 
     def _sync_executable_with_alias(self) -> None:
         """
         If alias is non-empty:
-          - clear 'Executable file name' (index 0)
-          - disable its edit + browse button
+          - clear & disable 'Executable file name' (index 0)
+          - clear & disable 'Design variables file' (index 2)
         Else:
-          - re-enable it
+          - re-enable both
         """
         if not hasattr(self, "file_fields") or not hasattr(self.file_fields, "_fields"):
             return
         if not self.file_fields._fields:
             return
 
-        alias = (self.alias_field.text or "")
-        alias_active = bool(alias.strip())
+        alias_active = bool((self.alias_field.text or "").strip())
+        inactive_style = "QLineEdit { background: #f0f0f0; color: #666; }"
+
+        def _toggle_index(i: int) -> None:
+            if i >= len(self.file_fields._fields):
+                return
+            _lbl, edit, btn = self.file_fields._fields[i]
+            if alias_active:
+                edit.blockSignals(True)
+                edit.setText("")
+                edit.blockSignals(False)
+                edit.setEnabled(False)
+                btn.setEnabled(False)
+                edit.setStyleSheet(inactive_style)
+            else:
+                edit.setEnabled(True)
+                btn.setEnabled(True)
+                edit.setStyleSheet("")
 
         # index 0 == "Executable file name"
-        _lbl_exe, edit_exe, btn_exe = self.file_fields._fields[0]
-
-        if alias_active:
-            # clear value
-            edit_exe.blockSignals(True)
-            edit_exe.setText("")
-            edit_exe.blockSignals(False)
-
-            # disable editing + browse
-            edit_exe.setEnabled(False)
-            btn_exe.setEnabled(False)
-
-            # NEW: visually indicate inactive
-            edit_exe.setStyleSheet(
-                "QLineEdit { background: #f0f0f0; color: #666; }"
-            )
-        else:
-            edit_exe.setEnabled(True)
-            btn_exe.setEnabled(True)
-
-            # NEW: restore normal style
-            edit_exe.setStyleSheet("")
+        _toggle_index(0)
+        # NEW: index 2 == "Design variables file"
+        _toggle_index(2)
 
     # --- public API for Study ---
 
