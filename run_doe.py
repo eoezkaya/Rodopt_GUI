@@ -13,7 +13,9 @@ from PyQt6.QtGui import QPixmap, QTransform, QIcon
 from csv_table_updater import CSVTableUpdater
 from config_store import load_executable
 from config_store import save_executable
-
+from plot_history_2d import plot_history_2d  # NEW
+import subprocess  # NEW
+import platform  # NEW
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -31,6 +33,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QScrollArea,
     QApplication,
+    QPushButton,  # NEW
 )
 
 from PyQt6.QtCore import Qt, QSize, QProcess, QTimer
@@ -57,13 +60,12 @@ class RunDoE(QWidget):
         self.pause_start_time: Optional[float] = None
         self.paused_duration: float = 0.0
         
-        
         self._last_csv_mtime = 0.0
         self._dimension: Optional[int] = None
 
         self.last_exec_path = load_executable()
 
-
+        self._caffeinate_proc: subprocess.Popen | None = None  # NEW
 
         # ==========================================================
         # === Header ===
@@ -130,6 +132,15 @@ class RunDoE(QWidget):
         self.btn_status.clicked.connect(self._on_show_process_status_clicked)
         self.btn_status.setEnabled(True)  # always active
 
+        self.btn_plot_2d = QToolButton()
+        self.btn_plot_2d.setIcon(QIcon(str(self.ICON_DIR / "chart.svg")))
+        self.btn_plot_2d.setIconSize(icon_size)
+        self.btn_plot_2d.setAutoRaise(True)
+        self.btn_plot_2d.setFixedSize(button_size + 6, button_size + 6)
+        self.btn_plot_2d.setToolTip("Plot optimization history")
+        self.btn_plot_2d.clicked.connect(self._on_plot_history_2d_clicked)
+        self.btn_plot_2d.setEnabled(True)  # match Pareto button initial state
+
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(10)
@@ -140,6 +151,7 @@ class RunDoE(QWidget):
         header_layout.addWidget(self.btn_pause)
         header_layout.addWidget(self.btn_stop)
         header_layout.addWidget(self.btn_plot)
+        header_layout.addWidget(self.btn_plot_2d)  # NEW: next to Pareto
         header_layout.addWidget(self.btn_status)
 
 
@@ -258,7 +270,33 @@ class RunDoE(QWidget):
         self._xml_path = os.path.abspath(path)
         self.xml_field.path = self._xml_path   # display only
         self._update_run_directory()
+        self._update_plot_buttons_enabled()  # NEW
 
+    # NEW: macOS keep-awake helpers
+    def _keep_awake_start(self) -> None:
+        if platform.system() != "Darwin":
+            return
+        if self._caffeinate_proc is not None and self._caffeinate_proc.poll() is None:
+            return
+        try:
+            # -dimsu: prevent display sleep, idle sleep, and system sleep while this runs
+            self._caffeinate_proc = subprocess.Popen(
+                ["caffeinate", "-dimsu"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self._caffeinate_proc = None
+
+    def _keep_awake_stop(self) -> None:
+        p = self._caffeinate_proc
+        self._caffeinate_proc = None
+        if p is None:
+            return
+        try:
+            p.terminate()
+        except Exception:
+            pass
 
     def _on_run_clicked(self):
         """Start or resume the DoE process."""
@@ -309,6 +347,8 @@ class RunDoE(QWidget):
         self.process.readyReadStandardError.connect(self._on_stderr)
         self.process.finished.connect(self._on_process_finished)
 
+        self._keep_awake_start()  # NEW
+
         self.process.start(exec_path, [xml_path])
         if not self.process.waitForStarted(2000):
             QMessageBox.critical(self, "Error", "Failed to start the executable.")
@@ -341,6 +381,7 @@ class RunDoE(QWidget):
                 self._update_status_indicator("yellow", "Paused")
                 self.btn_pause.setEnabled(False)
                 self.btn_run.setEnabled(True)
+                self._keep_awake_stop()  # NEW
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to pause process:\n{e}")
 
@@ -367,6 +408,7 @@ class RunDoE(QWidget):
                 self._update_status_indicator("red", "Stopped")
                 self.btn_run.setEnabled(True)
                 self.btn_pause.setEnabled(False)
+                self._keep_awake_stop()  # NEW
         elif state == QProcess.ProcessState.Running and self.start_time:
             elapsed = int(time.time() - self.start_time - getattr(self, "paused_duration", 0.0))
             self._update_status_indicator("green", f"Running ({self._format_elapsed(elapsed)})")
@@ -383,6 +425,7 @@ class RunDoE(QWidget):
         self.btn_run.setEnabled(True)
         self._update_status_indicator("red", "Stopped")
         self._update_run_directory()
+        self._keep_awake_stop()  # NEW
                 
     def _on_process_finished(self, exit_code, exit_status):
         self.state = "stopped"
@@ -497,7 +540,7 @@ class RunDoE(QWidget):
             QMessageBox.warning(self, "No Run Directory", "Run directory not found.")
             return
     
-        csv_path = os.path.join(run_dir, "DoE_history.csv")
+        csv_path = os.path.join(run_dir, "history.csv")
         if not os.path.isfile(csv_path):
             QMessageBox.warning(self, "Missing File", "DoE_history.csv not found.")
             return
@@ -665,7 +708,7 @@ class RunDoE(QWidget):
             return
 
         self._csv_updater.update(
-            csv_path=os.path.join(run_dir, "DoE_history.csv"),
+            csv_path=os.path.join(run_dir, "history.csv"),
             xml_path=self._xml_path,
             start_time=self.start_time,
             dimension=self._dimension,
@@ -690,7 +733,7 @@ class RunDoE(QWidget):
                 QMessageBox.warning(self, "No Run Directory", "Run directory not found.")
                 return
     
-            csv_path = os.path.join(run_dir, "DoE_history.csv")
+            csv_path = os.path.join(run_dir, "history.csv")
             if not os.path.isfile(csv_path):
                 QMessageBox.warning(self, "Missing File", "DoE_history.csv not found.")
                 return
@@ -736,6 +779,40 @@ class RunDoE(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to show design details:\n{e}")
         
 
+    def _on_plot_history_2d_clicked(self) -> None:  # UPDATED
+        run_dir = self.run_dir_field.path.strip()
+        if not run_dir or not os.path.isdir(run_dir):
+            QMessageBox.warning(self, "No Run Directory", "Run directory not found.")
+            return
+
+        csv_path = os.path.join(run_dir, "history.csv")
+        if not os.path.isfile(csv_path):
+            # fallback to DoE_history.csv if that’s what exists in this run folder
+            alt = os.path.join(run_dir, "DoE_history.csv")
+            if os.path.isfile(alt):
+                csv_path = alt
+            else:
+                QMessageBox.warning(self, "Missing File", "history.csv / DoE_history.csv not found.")
+                return
+
+        try:
+            # NEW: determine d from study XML <dimension>
+            if not getattr(self, "_xml_path", None) or not os.path.isfile(self._xml_path):
+                raise ValueError("Study XML path not set.")
+
+            tree = ET.parse(self._xml_path)
+            root = tree.getroot()
+            dim_el = root.find(".//dimension")
+            if dim_el is None or not (dim_el.text or "").strip():
+                raise ValueError("Could not find <dimension> in the study XML.")
+            d = int(float(dim_el.text.strip()))
+            if d <= 0:
+                raise ValueError("<dimension> must be a positive integer.")
+
+            plot_history_2d(csv_path, d, title="Best feasible objective vs Sample ID")
+        except Exception as e:
+            QMessageBox.critical(self, "Plot Error", f"Failed to plot optimization history:\n{e}")
+
 
     # ==========================================================
     # === Helpers ===
@@ -774,4 +851,27 @@ class RunDoE(QWidget):
     # ==========================================================
     # === Periodic status checking ===
     # ==========================================================
+    def _is_multi_objective(self) -> bool:
+        """Return True if study XML defines more than one objective_function."""
+        try:
+            xml_path = getattr(self, "_xml_path", None)
+            if not xml_path or not os.path.isfile(xml_path):
+                return False
+            root = ET.parse(xml_path).getroot()
+            return len(root.findall("objective_function")) > 1
+        except Exception:
+            return False
+
+    def _update_plot_buttons_enabled(self) -> None:
+        """
+        Pareto vs history-2D are mutually exclusive:
+          - Multi-objective: enable Pareto, disable history-2D
+          - Single-objective: disable Pareto, enable history-2D
+        """
+        mo = self._is_multi_objective()
+
+        if hasattr(self, "btn_plot"):      # Pareto
+            self.btn_plot.setEnabled(mo)
+        if hasattr(self, "btn_plot_2d"):   # history plot
+            self.btn_plot_2d.setEnabled(not mo)
 

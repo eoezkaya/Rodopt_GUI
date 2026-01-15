@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
 from xml.etree import ElementTree as ET
+import xml.dom.minidom as minidom
 import sys
 import os
 
@@ -505,10 +506,9 @@ class Study(QWidget):
         return root
 
     def to_xml_string(self) -> str:
-        return ET.tostring(
-            self.to_xml(),
-            encoding="utf-8"
-        ).decode("utf-8")
+        rough = ET.tostring(self.to_xml(), encoding="utf-8")
+        pretty = minidom.parseString(rough).toprettyxml(indent="  ", encoding="utf-8")
+        return pretty.decode("utf-8")
 
 
 # ----------------------------------------------------------------------

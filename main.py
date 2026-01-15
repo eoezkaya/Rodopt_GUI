@@ -1,8 +1,9 @@
 import sys
 import os
 
-from PyQt6.QtWidgets import QApplication, QMainWindow
-from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel
+from PyQt6.QtGui import QIcon, QPixmap
+from PyQt6.QtCore import QTimer, Qt
 
 from study_widget import Study
 from themes import apply_theme  # optional if you use theming
@@ -20,7 +21,17 @@ class MainWindow(QMainWindow):
         self.resize(1100, 750)
         self.setWindowIcon(QIcon("images/logo.png"))
 
-        # Directly open the DoE widget
+        # NEW: show logo first (same window), then swap in the real UI
+        self._logo_label = QLabel()
+        self._logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._logo_label.setStyleSheet("background: white;")
+        self._logo_label.setPixmap(QPixmap("images/logo_no_canvas.png"))
+
+        self.setCentralWidget(self._logo_label)
+
+        QTimer.singleShot(1500, self._show_main_ui)
+
+    def _show_main_ui(self) -> None:
         self.study_widget = Study()
         self.setCentralWidget(self.study_widget)
 
