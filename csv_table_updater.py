@@ -24,15 +24,28 @@ class CSVTableUpdater:
         dimension: Optional[int],
         state: str,
     ):
-        """Update table from DoE_history.csv if needed."""
-        if state != "running" or not start_time:
+        """Update table from history CSV if needed."""
+
+        # if called before the process starts, do nothing
+        
+        if not start_time:
             return
-        if not os.path.isfile(csv_path):
+
+        # If CSV doesn't exist yet, do nothing
+        if not csv_path or not os.path.isfile(csv_path):
             return
 
         mtime = os.path.getmtime(csv_path)
-        if mtime == self._last_mtime or mtime < start_time:
+       
+
+        # NEW: ignore CSV files from a previous run (created/modified before this run started)
+        if mtime < start_time:
             return
+
+        if mtime == self._last_mtime:
+            return
+
+        self._last_mtime = mtime
 
         with open(csv_path, newline="", encoding="utf-8") as f:
             rows = list(csv.reader(f))
@@ -66,7 +79,6 @@ class CSVTableUpdater:
             num_constraints,
         )
 
-        self._last_mtime = mtime
         self.table.scrollToBottom()
 
     # ------------------------------------------------------------

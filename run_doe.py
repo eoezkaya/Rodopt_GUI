@@ -85,7 +85,7 @@ class RunDoE(QWidget):
         self.btn_run.setIconSize(icon_size)
         self.btn_run.setAutoRaise(True)
         self.btn_run.setFixedSize(button_size + 6, button_size + 6)
-        self.btn_run.setToolTip("Run the DoE")
+        self.btn_run.setToolTip("Run the study")
         self.btn_run.clicked.connect(self._on_run_clicked)
 
         self.btn_pause = QToolButton()
@@ -93,7 +93,7 @@ class RunDoE(QWidget):
         self.btn_pause.setIconSize(icon_size)
         self.btn_pause.setAutoRaise(True)
         self.btn_pause.setFixedSize(button_size + 6, button_size + 6)
-        self.btn_pause.setToolTip("Pause the DoE")
+        self.btn_pause.setToolTip("Pause the study")
         self.btn_pause.clicked.connect(self._on_pause_clicked)
 
         self.btn_stop = QToolButton()
@@ -101,7 +101,7 @@ class RunDoE(QWidget):
         self.btn_stop.setIconSize(icon_size)
         self.btn_stop.setAutoRaise(True)
         self.btn_stop.setFixedSize(button_size + 6, button_size + 6)
-        self.btn_stop.setToolTip("Stop the DoE")
+        self.btn_stop.setToolTip("Stop the study")
         self.btn_stop.clicked.connect(self._on_stop_clicked)
         
         self.btn_plot = QToolButton()  # NEW
@@ -118,7 +118,7 @@ class RunDoE(QWidget):
         self.btn_plot.setIconSize(icon_size)
         self.btn_plot.setAutoRaise(True)
         self.btn_plot.setFixedSize(button_size + 6, button_size + 6)
-        self.btn_plot.setToolTip("Plot Pareto Front")
+        self.btn_plot.setToolTip("Plot Pareto front")
         self.btn_plot.clicked.connect(self._on_plot_pareto_clicked)
         self.btn_plot.setEnabled(False)  # initially disabled
         
@@ -299,6 +299,23 @@ class RunDoE(QWidget):
             pass
 
     def _on_run_clicked(self):
+        # Determine whether this is a resume or a fresh start
+        was_paused = (getattr(self, "state", "") == "paused")
+
+        # If process is stopped (fresh start), clear the table
+        if not was_paused:
+            try:
+                self.table.setRowCount(0)
+                self.table.clearContents()
+            except Exception:
+                pass
+            # also reset CSV updater cache so new run's CSV is picked up immediately
+            try:
+                if hasattr(self, "_csv_updater") and self._csv_updater is not None:
+                    self._csv_updater._last_mtime = 0.0
+            except Exception:
+                pass
+
         """Start or resume the DoE process."""
         # --- Resume case ---
         if self.state == "paused" and self.process:
@@ -403,7 +420,6 @@ class RunDoE(QWidget):
         if state == QProcess.ProcessState.NotRunning:
             if self.state != "stopped":
                 self.state = "stopped"
-                self.start_time = None
                 self.paused_duration = 0.0
                 self._update_status_indicator("red", "Stopped")
                 self.btn_run.setEnabled(True)
@@ -421,7 +437,6 @@ class RunDoE(QWidget):
             self.process.kill()
             self.process.waitForFinished(1000)
         self.state = "stopped"
-        self.start_time = None
         self.btn_run.setEnabled(True)
         self._update_status_indicator("red", "Stopped")
         self._update_run_directory()
@@ -429,7 +444,6 @@ class RunDoE(QWidget):
                 
     def _on_process_finished(self, exit_code, exit_status):
         self.state = "stopped"
-        self.start_time = None
         self.btn_run.setEnabled(True)
         self._update_status_indicator("red", "Stopped")
         self._update_run_directory()
