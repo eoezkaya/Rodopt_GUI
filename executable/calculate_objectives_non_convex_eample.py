@@ -24,7 +24,7 @@ def evaluateFunction2(x: np.ndarray) -> float:
 
 
 def main() -> int:
-    print("Evaluating objective functions...\n")
+#    print("Evaluating objective functions...\n")
 
     dim = 2
     dv = np.zeros(dim, dtype=float)
@@ -40,13 +40,13 @@ def main() -> int:
         print(f"ERROR: Failed to read dv.dat: {e}")
         return 1
 
-    print("design variables =", dv)
+#    print("design variables =", dv)
 
     functionValue1 = evaluateFunction1(dv)
     functionValue2 = evaluateFunction2(dv)
 
-    print("function1 value =", functionValue1)
-    print("function2 value =", functionValue2)
+ #   print("function1 value =", functionValue1)
+ #   print("function2 value =", functionValue2)
 
     # NEW: delay before writing results
     time.sleep(50)

@@ -297,6 +297,10 @@ class ObjectiveFunction(QWidget):
 
         self.remote_server_widget.changed.connect(self.changed.emit)
 
+        # NEW: validate executable existence whenever path/location changes
+        self.exec_file.pathChanged.connect(lambda _p: self._validate_local_executable())
+        self.execution_location_field.valueChanged.connect(lambda _v: self._validate_local_executable())
+
     # ==============================================================
     # Problem type integration
     # ==============================================================
@@ -486,6 +490,41 @@ class ObjectiveFunction(QWidget):
                 "must start and end with a letter/digit; length 2-200."
             )
 
+    def _validate_local_executable(self) -> None:
+        """
+        If execution location is local, executable must exist as a file.
+        Missing executable is shown with a red border.
+        """
+        try:
+            is_local = (self.execution_location_field.value or "").strip().lower() == "local"
+        except Exception:
+            is_local = True
+
+        # underlying QLineEdit in FilePathField
+        edit = None
+        if hasattr(self.exec_file, "_fields") and self.exec_file._fields:
+            _lbl, e, _btn = self.exec_file._fields[0]
+            edit = e
+
+        if edit is None:
+            return
+
+        if not is_local:
+            # remote: do not require local executable existence
+            edit.setStyleSheet("")
+            edit.setToolTip("")
+            return
+
+        path = (self.exec_file.path or "").strip()
+        ok = bool(path) and os.path.isfile(path)
+
+        if ok:
+            edit.setStyleSheet("")
+            edit.setToolTip("")
+        else:
+            edit.setStyleSheet(self._invalid_name_style)
+            edit.setToolTip("Executable file not found. Please select an existing file for local execution.")
+
     # ==============================================================
     # Snapshot / XML
     # ==============================================================
@@ -567,6 +606,9 @@ class ObjectiveFunction(QWidget):
         self.grad_exec_file.path = get("gradient_executable_filename")
         self.grad_output_file.path = get("gradient_output_filename")
         self.working_dir_field.path = get("working_directory")
+
+        # NEW: refresh validation after loading values
+        self._validate_local_executable()
 
         if element.find("remote_server") is not None:
             self.remote_server_widget.from_xml(element.find("remote_server"))
