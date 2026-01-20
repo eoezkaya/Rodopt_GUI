@@ -133,6 +133,17 @@ class GeneralSettings(QWidget):
             parent=self.group_box,
         )
 
+        # NEW: Smart Scheduling (Optimization only)
+        self.smart_scheduling_field = StringOptionsField(
+            "Smart Scheduling",
+            value="Off",
+            options=["Off", "On"],
+            label_width=label_width,
+            field_width=text_field_width,
+            parent=self.group_box,
+        )
+        self.smart_scheduling_field.valueChanged.connect(lambda _v: self.changed.emit())
+
         # === Layout ===
         inner_layout = QVBoxLayout(self.group_box)
         inner_layout.setContentsMargins(16, 16, 16, 16)
@@ -146,6 +157,7 @@ class GeneralSettings(QWidget):
             self.sampling_field,
             self.batch_size_field,
             self.working_dir_field,
+            self.smart_scheduling_field,
         ):
             inner_layout.addWidget(w, alignment=Qt.AlignmentFlag.AlignLeft)
 
@@ -199,6 +211,10 @@ class GeneralSettings(QWidget):
         else:
             self.sampling_field.show()
 
+        is_opt = (self.problem_type_field.value == "Optimization")
+        self.smart_scheduling_field.setVisible(is_opt)
+        self.smart_scheduling_field.setEnabled(is_opt)
+
     # ------------------------------------------------------------------
     def _schedule_directory_check(self, path: str):
         self._pending_path = path
@@ -248,6 +264,9 @@ class GeneralSettings(QWidget):
         if self.problem_type != "Optimization":
             data["sampling_method"] = self.sampling_field.value
 
+        if self.problem_type == "Optimization":
+            data["smart_scheduling"] = self.smart_scheduling_field.value
+
         return data
 
     # ------------------------------------------------------------------
@@ -267,6 +286,9 @@ class GeneralSettings(QWidget):
 
         ET.SubElement(root, "working_directory").text = self.working_dir_field.path
         ET.SubElement(root, "batch_size").text = str(int(self.batch_size_field.value))
+
+        if self.problem_type == "Optimization":
+            ET.SubElement(root, "smart_scheduling").text = self.smart_scheduling_field.value
 
         return root
 
@@ -296,6 +318,12 @@ class GeneralSettings(QWidget):
 
         if (wd := get("working_directory")):
             self.working_dir_field.path = wd
+
+        ss = get("smart_scheduling")
+        if ss in ("On", "Off"):
+            self.smart_scheduling_field.value = ss
+        else:
+            self.smart_scheduling_field.value = "Off"
 
         self._update_visibility_for_problem_type()
 

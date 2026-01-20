@@ -217,6 +217,15 @@ class ObjectiveFunction(QWidget):
             parent=self.group_box,
         )
 
+        # NEW: user hint for Working directory
+        if hasattr(self.working_dir_field, "_fields") and self.working_dir_field._fields:
+            _lbl, edit, _btn = self.working_dir_field._fields[0]
+            if isinstance(edit, QLineEdit):
+                edit.setToolTip(
+                    "Working directory used when evaluating this objective.\n"
+                    "All files required by the executable (scripts, input data, etc.) must be located in this directory."
+                )
+
         # ------------------------------------------------------------
         # Remote server
         # ------------------------------------------------------------
