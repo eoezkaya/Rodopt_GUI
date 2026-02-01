@@ -27,6 +27,12 @@ class GeneralSettings(QWidget):
       - problemTypeChanged(str): problem type changed
     """
 
+    _ALLOWED_PROBLEM_TYPES = {
+        "Optimization",
+        "Design of Experiment",
+        "Uncertainty Quantification",
+    }
+
     changed = pyqtSignal()
     problemTypeChanged = pyqtSignal(str)
 
@@ -191,6 +197,12 @@ class GeneralSettings(QWidget):
 
         self._update_visibility_for_problem_type()
 
+        # store defaults for reset
+        self._default_problem_type = default_problem_type
+        self._default_problem_name = default_problem_name
+        self._default_num_params = default_num_params
+        self._default_num_samples = default_num_samples
+
     # ------------------------------------------------------------------
     @property
     def problem_type(self) -> str:
@@ -300,11 +312,25 @@ class GeneralSettings(QWidget):
             el = element.find(tag)
             return el.text.strip() if el is not None and el.text else ""
 
-        if (ptype := get("problem_type")):
-            self.problem_type_field.value = ptype
+        # Validate problem_type first; if invalid, warn + reset + abort loading
+        ptype = get("problem_type")
+        if ptype and ptype not in self._ALLOWED_PROBLEM_TYPES:
+            QMessageBox.warning(
+                self,
+                "Invalid XML",
+                "Invalid 'problem_type' in the XML file:\n"
+                f"  {ptype}\n\n"
+                "Allowed values are:\n"
+                "  - Optimization\n"
+                "  - Design of Experiment\n"
+                "  - Uncertainty Quantification\n\n"
+                "The XML file was not loaded; default settings were restored.",
+            )
+            self._reset_to_defaults()
+            return
 
-        if (name := get("name")):
-            self.problem_name_field.text = name
+        if ptype:
+            self.problem_type_field.value = ptype
 
         try:
             self.num_params_field.value = int(get("dimension"))
@@ -325,6 +351,18 @@ class GeneralSettings(QWidget):
         else:
             self.smart_scheduling_field.value = "Off"
 
+        self._update_visibility_for_problem_type()
+
+    def _reset_to_defaults(self) -> None:
+        """Reset UI fields to defaults."""
+        self.problem_type_field.value = self._default_problem_type
+        self.problem_name_field.text = self._default_problem_name
+        self.num_params_field.value = self._default_num_params
+        self.num_samples_field.value = self._default_num_samples
+        self.batch_size_field.value = 1
+        self.sampling_field.value = "Latin Hypercube"
+        self.smart_scheduling_field.value = "Off"
+        self.working_dir_field.path = ""
         self._update_visibility_for_problem_type()
 
     def _on_problem_name_changed(self, text: str) -> None:

@@ -6,7 +6,7 @@
     <dimension>2</dimension>
     <number_of_function_evaluations>100</number_of_function_evaluations>
     <sampling_method>Latin Hypercube</sampling_method>
-    <working_directory>/Users/emreozkaya/RoDOP/src/GUI/MultiObjective</working_directory>
+    <working_directory>/Users/emreozkaya/Rodopt_GUI/Tests/MultiObjective</working_directory>
     <batch_size>5</batch_size>
   </general_settings>
   <problem_parameters>
@@ -30,7 +30,7 @@
     <training_data_filename>himmelblau.csv</training_data_filename>
     <design_vector_filename>dv.dat</design_vector_filename>
     <output_filename>himmelblau.dat</output_filename>
-    <working_directory>/Users/emreozkaya/RoDOP/src/GUI</working_directory>
+    <working_directory>/Users/emreozkaya/Rodopt_GUI/Tests/WorkHimmelblau</working_directory>
     <remote_server>
       <host>elwe3.rz.rptu.de</host>
       <user>eoezkaya</user>
@@ -41,32 +41,32 @@
   <objective_function>
     <name>Objective2</name>
     <execution_location>local</execution_location>
-    <executable_filename>/Users/emreozkaya/RoDOP/src/GUI/executable/calculateSecondObjectiveFunction.py</executable_filename>
+    <executable_filename>/Users/emreozkaya/Rodopt_GUI/executable/rosenbrock.py</executable_filename>
     <training_data_filename>rosenbrock.csv</training_data_filename>
     <design_vector_filename>dv.dat</design_vector_filename>
     <output_filename>rosenbrock.dat</output_filename>
-    <working_directory>/Users/emreozkaya/RoDOP/src/GUI/WorkSecondObjective</working_directory>
+    <working_directory>/Users/emreozkaya/Rodopt_GUI/Tests/WorkRosenbrock</working_directory>
   </objective_function>
   <constraint_function>
     <name>Constraint1</name>
     <execution_location>local</execution_location>
     <constraint_type>gt</constraint_type>
     <constraint_value>0.0</constraint_value>
-    <executable_filename>/Users/emreozkaya/RoDOP/src/GUI/executable/constraint1.py</executable_filename>
+    <executable_filename>/Users/emreozkaya/Rodopt_GUI/executable/constraint1.py</executable_filename>
     <training_data_filename>constraint1.csv</training_data_filename>
     <design_vector_filename>dv.dat</design_vector_filename>
     <output_filename>constraint1.dat</output_filename>
-    <working_directory>/Users/emreozkaya/RoDOP/src/GUI/WorkConstraint1</working_directory>
+    <working_directory>/Users/emreozkaya/Rodopt_GUI/Tests/WorkConstraint1</working_directory>
   </constraint_function>
   <constraint_function>
     <name>Constraint2</name>
     <execution_location>local</execution_location>
     <constraint_type>lt</constraint_type>
-    <constraint_value>10.0</constraint_value>
-    <executable_filename>/Users/emreozkaya/RoDOP/src/GUI/executable/constraint2.py</executable_filename>
+    <constraint_value>20.0</constraint_value>
+    <executable_filename>/Users/emreozkaya/Rodopt_GUI/executable/constraint2.py</executable_filename>
     <training_data_filename>constraint2.csv</training_data_filename>
     <design_vector_filename>dv.dat</design_vector_filename>
     <output_filename>constraint2.dat</output_filename>
-    <working_directory>/Users/emreozkaya/RoDOP/src/GUI/WorkConstraint2</working_directory>
+    <working_directory>/Users/emreozkaya/Rodopt_GUI/Tests/WorkConstraint2</working_directory>
   </constraint_function>
 </optimization_study>
