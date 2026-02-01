@@ -250,13 +250,13 @@ class ConstraintFunction(QWidget):
           - only letters, digits, underscore allowed
         """
         import re
-
+        
         name = text  # do NOT strip; "Constraint1 " should be invalid
 
         if not name or any(ch.isspace() for ch in name):
             is_valid = False
         else:
-            is_valid = bool(re.fullmatch(r"[A-Za-z0-9_]+", name))
+            is_valid = bool(re.fullmatch(r"[A-Za-z0-9_]+", name))         
 
         self._set_name_valid(is_valid)
 
@@ -443,6 +443,7 @@ class ConstraintFunction(QWidget):
             return el.text.strip() if el is not None and el.text else ""
 
         self.name_field.text = get("name") or self._default_name
+       
         self.alias_field.text = get("alias")  # NEW: Load alias from XML
         loc = get("execution_location") or self._default_execution_location
         self.execution_location_field.value = loc
@@ -451,9 +452,17 @@ class ConstraintFunction(QWidget):
         ctype = get("constraint_type")
         cval = get("constraint_value")
         if ctype and cval:
-            self.definition_field.text = (
-                (">" if ctype == "gt" else "<") + " " + cval
-            )
+            # accept both legacy and new forms
+            if ctype.lower() == "gt":
+                op = ">"
+            elif ctype.lower() == "lt":
+                op = "<"
+            elif ctype in (">", "<"):
+                op = ctype
+            else:
+                op = ""
+            if op:
+                self.definition_field.text = f"{op} {cval}"
 
         self.file_fields.set_paths([
             get("executable_filename"),

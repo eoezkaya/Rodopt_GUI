@@ -589,15 +589,15 @@ class RunDoE(QWidget):
             feasible_points = []
             infeasible_points = []
     
-            for row in data:
+            for idx, row in enumerate(data, start=1):
                 try:
                     x = float(row[obj_cols[0]])
                     y = float(row[obj_cols[1]])
                     feas = float(row[feas_col]) if self._is_float(row[feas_col]) else 0.0
                     if feas == 1.0:
-                        feasible_points.append((x, y))
+                        feasible_points.append((x, y, idx))
                     else:
-                        infeasible_points.append((x, y))
+                        infeasible_points.append((x, y, idx))
                 except Exception:
                     continue
     
@@ -608,51 +608,52 @@ class RunDoE(QWidget):
             # --- compute Pareto front among feasible points ---
             def dominates(a, b):
                 """Return True if a dominates b (assuming minimization)."""
-                return (a[0] <= b[0] and a[1] <= b[1]) and (a[0] < b[0] or a[1] < b[1])
+                ax, ay = a[0], a[1]
+                bx, by = b[0], b[1]
+                return (ax <= bx and ay <= by) and (ax < bx or ay < by)
     
             pareto_points = []
             for p in feasible_points:
                 if not any(dominates(q, p) for q in feasible_points if q != p):
                     pareto_points.append(p)
     
-            # sort Pareto points for line
+            # sort Pareto points for line (by x objective)
             pareto_points.sort(key=lambda p: p[0])
     
             # --- plot ---
             plt.figure(figsize=(10, 8))
+    
             if infeasible_points:
-                x_infeas, y_infeas = zip(*infeasible_points)
+                x_infeas, y_infeas, ids_infeas = zip(*infeasible_points)
                 plt.scatter(x_infeas, y_infeas, color="red", label="Unfeasible Samples", marker="x")
-                # NEW: label each point with its row number (1-based)
-                for (x, y) in infeasible_points:
-                    # row number = first matching occurrence in data order
-                    idx0 = next((i for i, p in enumerate(infeasible_points) if p == (x, y)), None)
-                    if idx0 is not None:
-                        plt.annotate(
-                            str(idx0 + 1),
-                            (x, y),
-                            textcoords="offset points",
-                            xytext=(4, 2),
-                            fontsize=7,
-                            color="red",
-                        )
+    
+                # label each point with its CSV row number (1-based, excluding header)
+                for (x, y, sid) in infeasible_points:
+                    plt.annotate(
+                        str(sid),
+                        (x, y),
+                        textcoords="offset points",
+                        xytext=(4, 2),
+                        fontsize=7,
+                        color="red",
+                    )
+    
             if feasible_points:
-                x_feas, y_feas = zip(*feasible_points)
+                x_feas, y_feas, ids_feas = zip(*feasible_points)
                 plt.scatter(x_feas, y_feas, color="blue", label="Feasible Samples", marker="o")
-                # NEW: label each point with its row number (1-based)
-                for (x, y) in feasible_points:
-                    idx0 = next((i for i, p in enumerate(feasible_points) if p == (x, y)), None)
-                    if idx0 is not None:
-                        plt.annotate(
-                            str(idx0 + 1),
-                            (x, y),
-                            textcoords="offset points",
-                            xytext=(4, 2),
-                            fontsize=7,
-                            color="blue",
-                        )
+    
+                for (x, y, sid) in feasible_points:
+                    plt.annotate(
+                        str(sid),
+                        (x, y),
+                        textcoords="offset points",
+                        xytext=(4, 2),
+                        fontsize=7,
+                        color="blue",
+                    )
+    
             if pareto_points:
-                px, py = zip(*pareto_points)
+                px, py = zip(*[(p[0], p[1]) for p in pareto_points])
                 plt.plot(px, py, color="green", marker="o", linewidth=2.5, label="Pareto Front")
     
             plt.xlabel(headers[obj_cols[0]])

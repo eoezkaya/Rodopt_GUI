@@ -221,6 +221,24 @@ class Study(QWidget):
     # Objective / Constraint
     # ==============================================================
     def _next_objective_name(self) -> str:
+        try:
+            n_obj = sum(
+                1
+                for i in range(self.tabs.count())
+                if self.tabs.tabText(i).strip().startswith("Objective")
+                or isinstance(self.tabs.widget(i).findChild(ObjectiveFunction), ObjectiveFunction)
+            )
+        except Exception:
+            n_obj = 0
+
+        if n_obj >= 2:
+            QMessageBox.information(
+                self,
+                "Objective Limit",
+                "Only up to 2 objective functions are supported.",
+            )
+            return ""
+
         i = 1
         while f"Objective{i}" in self._widgets:
             i += 1
@@ -233,6 +251,10 @@ class Study(QWidget):
         return f"Constraint{i}"
 
     def _add_objective_tab(self, *, from_element: ET.Element | None = None) -> None:
+        if from_element is None:
+            name = self._next_objective_name()
+            if not name:
+                return
         obj = ObjectiveFunction(
             label_width=self._label_width,
             field_width=self._field_width,
@@ -271,33 +293,29 @@ class Study(QWidget):
             self.tabs.setTabText(idx, title.strip() or "Objective")
 
     def _add_constraint_tab(self, *, from_element: ET.Element | None = None) -> None:
-        name = self._next_constraint_name()
-        key = name  # key matches the visible/default name
-
         con = ConstraintFunction(
             label_width=self._label_width,
             field_width=self._field_width,
             button_size=self._button_size,
         )
 
-        # Constraint identity is owned by Study
-        con.name = name
-        con.name_field.setEnabled(True)
-
         if from_element is not None:
             con.from_xml(from_element)
-            # enforce consistency: label matches our Study-owned name
-            con.name = name
+
+            xml_name_el = from_element.find("name")
+            xml_name = (xml_name_el.text or "").strip() if xml_name_el is not None else ""
+            key = xml_name or self._next_constraint_name()
+            # do NOT overwrite con.name / con.name_field here
+        else:
+            key = self._next_constraint_name()
+            con.name_field.text = key
 
         self._add_tab(con, key, align_top=True, closable=True)
-
         wrapper = self._widgets[key]
 
-        # keep tab label in sync with constraint name field
         con.name_field.textChanged.connect(
             lambda text, w=wrapper: self._sync_constraint_tab_title(w, text)
         )
-
         con.changed.connect(self._mark_dirty)
 
         self._propagate_problem_type()
