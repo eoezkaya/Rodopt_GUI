@@ -329,6 +329,22 @@ class GeneralSettings(QWidget):
             self._reset_to_defaults()
             return
 
+        # NEW: validate smart_scheduling if present (only On/Off)
+        ss = get("smart_scheduling")
+        if ss and ss not in ("On", "Off"):
+            QMessageBox.warning(
+                self,
+                "Invalid XML",
+                "Invalid 'smart_scheduling' in the XML file:\n"
+                f"  {ss}\n\n"
+                "Allowed values are:\n"
+                "  - On\n"
+                "  - Off\n\n"
+                "The XML file was not loaded; default settings were restored.",
+            )
+            self._reset_to_defaults()
+            return
+
         if ptype:
             self.problem_type_field.value = ptype
 
@@ -345,9 +361,9 @@ class GeneralSettings(QWidget):
         if (wd := get("working_directory")):
             self.working_dir_field.path = wd
 
-        ss = get("smart_scheduling")
-        if ss in ("On", "Off"):
-            self.smart_scheduling_field.value = ss
+        # If Optimization: apply smart scheduling (default Off otherwise)
+        if self.problem_type_field.value == "Optimization":
+            self.smart_scheduling_field.value = ss or "Off"
         else:
             self.smart_scheduling_field.value = "Off"
 

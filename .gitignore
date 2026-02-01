@@ -1,5 +1,6 @@
 *.xml
 *.log
 *.csv
+.DS_Store
 Tests/*
 
