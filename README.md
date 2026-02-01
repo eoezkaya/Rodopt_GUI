@@ -9,7 +9,7 @@ The app lets you configure:
 - **Parameters** (design variables table)
 - **Objective Function(s)**
 - **Constraint Function(s)**
-- **Run / DoE execution** and result inspection (e.g., selecting designs, plotting)
+- **Run / DoE and Optimization executions** and result inspection (e.g., selecting designs, plotting)
 
 Studies can be exported/imported as **XML**.
 
@@ -20,5 +20,5 @@ Studies can be exported/imported as **XML**.
 - Dependencies:
   - PyQt6
   - numpy
-  - matplotlib (if plotting is enabled in the app)
+  - matplotlib
 
