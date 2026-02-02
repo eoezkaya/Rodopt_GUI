@@ -14,6 +14,7 @@ from csv_table_updater import CSVTableUpdater
 from config_store import load_executable
 from config_store import save_executable
 from plot_history_2d import plot_history_2d  # NEW
+from plot_pareto_front import plot_pareto_front  # NEW
 import subprocess  # NEW
 import platform  # NEW
 
@@ -548,125 +549,27 @@ class RunDoE(QWidget):
         return latest_path
 
     def _on_plot_pareto_clicked(self):  # UPDATED
-        """Read CSV and plot Pareto front with feasible/unfeasible separation."""
-        run_dir = self.run_dir_field.path.strip()
-        if not run_dir or not os.path.isdir(run_dir):
-            QMessageBox.warning(self, "No Run Directory", "Run directory not found.")
-            return
-    
-        csv_path = os.path.join(run_dir, "history.csv")
-        if not os.path.isfile(csv_path):
-            QMessageBox.warning(self, "Missing File", "DoE_history.csv not found.")
-            return
-    
         try:
-            with open(csv_path, newline="", encoding="utf-8") as f:
-                rows = list(csv.reader(f))
-            if len(rows) < 2:
-                QMessageBox.information(self, "No Data", "No valid data in CSV file.")
+            run_dir = self.run_dir_field.path.strip()
+            if not run_dir or not os.path.isdir(run_dir):
+                QMessageBox.warning(self, "No Run Directory", "Run directory not found.")
                 return
-    
-            headers = rows[0]
-            data = rows[1:]
-    
-            # determine objective columns from XML
-            xml_path = self._xml_path
-            tree = ET.parse(xml_path)
-            root = tree.getroot()
-            num_objectives = len(root.findall("objective_function"))
-            if num_objectives != 2:
-                QMessageBox.information(self, "Invalid", "Pareto plot requires exactly two objectives.")
+
+            csv_path = os.path.join(run_dir, "history.csv")
+            if not os.path.isfile(csv_path):
+                alt = os.path.join(run_dir, "DoE_history.csv")
+                csv_path = alt if os.path.isfile(alt) else ""
+            if not csv_path:
+                QMessageBox.warning(self, "Missing File", "history.csv / DoE_history.csv not found.")
                 return
-    
-            # find dimensionality and columns
-            general = root.find("general_settings") or root.find("GeneralSettings")
-            dim_text = self._find_text(general, ["dimension", "Dimension"]).strip()
-            dim = int(dim_text) if dim_text.isdigit() else 0
-            feas_col = len(headers) - 1
-            obj_cols = [dim, dim + 1]
-    
-            # --- collect all points ---
-            feasible_points = []
-            infeasible_points = []
-    
-            for idx, row in enumerate(data, start=1):
-                try:
-                    x = float(row[obj_cols[0]])
-                    y = float(row[obj_cols[1]])
-                    feas = float(row[feas_col]) if self._is_float(row[feas_col]) else 0.0
-                    if feas == 1.0:
-                        feasible_points.append((x, y, idx))
-                    else:
-                        infeasible_points.append((x, y, idx))
-                except Exception:
-                    continue
-    
-            if not feasible_points and not infeasible_points:
-                QMessageBox.information(self, "No Data", "No valid points found in CSV.")
+
+            if not getattr(self, "_xml_path", None):
+                QMessageBox.warning(self, "Missing XML", "Study XML path is not set.")
                 return
-    
-            # --- compute Pareto front among feasible points ---
-            def dominates(a, b):
-                """Return True if a dominates b (assuming minimization)."""
-                ax, ay = a[0], a[1]
-                bx, by = b[0], b[1]
-                return (ax <= bx and ay <= by) and (ax < bx or ay < by)
-    
-            pareto_points = []
-            for p in feasible_points:
-                if not any(dominates(q, p) for q in feasible_points if q != p):
-                    pareto_points.append(p)
-    
-            # sort Pareto points for line (by x objective)
-            pareto_points.sort(key=lambda p: p[0])
-    
-            # --- plot ---
-            plt.figure(figsize=(10, 8))
-    
-            if infeasible_points:
-                x_infeas, y_infeas, ids_infeas = zip(*infeasible_points)
-                plt.scatter(x_infeas, y_infeas, color="red", label="Unfeasible Samples", marker="x")
-    
-                # label each point with its CSV row number (1-based, excluding header)
-                for (x, y, sid) in infeasible_points:
-                    plt.annotate(
-                        str(sid),
-                        (x, y),
-                        textcoords="offset points",
-                        xytext=(4, 2),
-                        fontsize=7,
-                        color="red",
-                    )
-    
-            if feasible_points:
-                x_feas, y_feas, ids_feas = zip(*feasible_points)
-                plt.scatter(x_feas, y_feas, color="blue", label="Feasible Samples", marker="o")
-    
-                for (x, y, sid) in feasible_points:
-                    plt.annotate(
-                        str(sid),
-                        (x, y),
-                        textcoords="offset points",
-                        xytext=(4, 2),
-                        fontsize=7,
-                        color="blue",
-                    )
-    
-            if pareto_points:
-                px, py = zip(*[(p[0], p[1]) for p in pareto_points])
-                plt.plot(px, py, color="green", marker="o", linewidth=2.5, label="Pareto Front")
-    
-            plt.xlabel(headers[obj_cols[0]])
-            plt.ylabel(headers[obj_cols[1]])
-            plt.title("Pareto Front")
-            plt.legend()
-            plt.grid(True, linestyle="--", alpha=0.5)
-            plt.tight_layout()
-            plt.show()
-    
+
+            plot_pareto_front(csv_path, xml_path=self._xml_path, title="Pareto Front")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to plot Pareto front:\n{e}")
-    
+            QMessageBox.critical(self, "Plot Error", f"Failed to plot Pareto front:\n{e}")
 
     def _on_show_process_status_clicked(self):
         """Open a dialog showing the contents of the latest *_process_pool.log file in the run directory."""
