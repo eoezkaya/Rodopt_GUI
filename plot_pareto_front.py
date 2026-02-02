@@ -139,20 +139,34 @@ def plot_pareto_front(csv_path: str, *, xml_path: str, title: Optional[str] = No
 
     if infeasible_points:
         x_infeas, y_infeas, _ = zip(*infeasible_points)
-        # CHANGED: red dots for unfeasible samples
         plt.scatter(x_infeas, y_infeas, color="red", label="Unfeasible Samples", marker="o")
-        for x, y, sid in infeasible_points:
-            plt.annotate(str(sid), (x, y), textcoords="offset points", xytext=(4, 2), fontsize=7, color="red")
+        # CHANGED: no annotations for unfeasible samples
+
+    if pareto_points:
+        pareto_ids = {sid for _, _, sid in pareto_points}
+    else:
+        pareto_ids = set()
 
     if feasible_points:
         x_feas, y_feas, _ = zip(*feasible_points)
         plt.scatter(x_feas, y_feas, color="blue", label="Feasible Samples", marker="o")
-        for x, y, sid in feasible_points:
-            plt.annotate(str(sid), (x, y), textcoords="offset points", xytext=(4, 2), fontsize=7, color="blue")
+        # CHANGED: no annotations for non-Pareto feasible samples
 
     if pareto_points:
         px, py = zip(*[(p[0], p[1]) for p in pareto_points])
         plt.plot(px, py, color="green", marker="o", linewidth=2.5, label="Pareto Front")
+
+        # CHANGED: annotate only Pareto-optimal sample IDs (green)
+        for x, y, sid in pareto_points:
+            plt.annotate(
+                str(sid),
+                (x, y),
+                textcoords="offset points",
+                xytext=(4, 2),
+                fontsize=8,
+                color="green",
+                fontweight="bold",
+            )
 
     plt.xlabel(headers[obj1_col].strip() or "Objective 1")
     plt.ylabel(headers[obj2_col].strip() or "Objective 2")

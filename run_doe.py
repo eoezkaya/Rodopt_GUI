@@ -642,8 +642,7 @@ class RunDoE(QWidget):
             return False
     
   
-    def _on_table_row_clicked(self, row: int, column: int):
-        """Open a new dialog showing all values for the selected design (copyable)."""
+    def _on_table_row_clicked(self, row: int, col: int) -> None:
         try:
             # Determine run directory and CSV
             run_dir = self.run_dir_field.path.strip()
@@ -681,21 +680,123 @@ class RunDoE(QWidget):
                 Qt.TextInteractionFlag.TextSelectableByKeyboard
             )
     
-            # Build a clear, copyable textual representation
-            lines = []
+            constraints = self._read_constraints_from_xml()
+            by_name = {c["name"]: c for c in constraints}
+
+            feas_names = {"feasible", "feasibility", "is_feasible", "feas", "feas_flag"}
+
+            html_lines: list[str] = []
             for h, v in zip(headers, data_row):
-                lines.append(f"{h.strip()}: {v.strip()}")
-            text_edit.setPlainText("\n".join(lines))
-    
+                h_clean = h.strip()
+                v_clean = v.strip()
+
+                # do not display Improvement rows
+                if h_clean.lower() == "improvement":
+                    continue
+
+                # feasibility as YES/NO
+                if h_clean.lower() in feas_names:
+                    try:
+                        feas_val = float(v_clean)
+                    except Exception:
+                        feas_val = 0.0
+                    v_html = (
+                        '<span style="color:#008000; font-weight:600;">YES</span>'
+                        if feas_val > 0.5
+                        else '<span style="color:#cc0000; font-weight:600;">NO</span>'
+                    )
+                    html_lines.append(f"{h_clean}: {v_html}")
+                    continue
+
+                # constraints: match ONLY by name
+                c = by_name.get(h_clean.lower())
+                if c is not None:
+                    try:
+                        x = float(v_clean)
+                    except Exception:
+                        x = None
+
+                    if x is None:
+                        v_esc = (
+                            v_clean.replace("&", "&amp;")
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                        )
+                        html_lines.append(f"{h_clean}: {v_esc}")
+                    else:
+                        op = c["op"]  # "<" or ">"
+                        val = float(c["val"])
+                        ok = (x < val) if op == "<" else (x > val)
+                        color = "#008000" if ok else "#cc0000"
+                        v_html = f'<span style="color:{color}; font-weight:600;">{x:g}</span>'
+                        html_lines.append(f"{h_clean}: {v_html}")
+                    continue
+
+                # default: escape
+                v_esc = (
+                    v_clean.replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                )
+                h_esc = (
+                    h_clean.replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                )
+                html_lines.append(f"{h_esc}: {v_esc}")
+
+            text_edit.setHtml("<br/>".join(html_lines))
+
             layout = QVBoxLayout(dlg)
             layout.addWidget(text_edit)
             dlg.setLayout(layout)
             dlg.exec()
-            
     
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to show design details:\n{e}")
         
+    def _read_constraints_from_xml(self) -> list[dict[str, object]]:
+        """
+        Returns constraints with keys:
+          - name: str (lowercased)
+          - op: str ("<" or ">")
+          - val: float
+        """
+        xml_path = getattr(self, "_xml_path", None)
+        if not xml_path:
+            return []
+        try:
+            root = ET.parse(xml_path).getroot()
+        except Exception:
+            return []
+
+        out: list[dict[str, object]] = []
+        for c in root.findall(".//constraint_function"):
+            name = (c.findtext("name") or "").strip()
+            if not name:
+                continue
+
+            ctype = (c.findtext("constraint_type") or "").strip()
+            cval = (c.findtext("constraint_value") or "").strip()
+
+            # accept only literal operators; tolerate legacy
+            if ctype.lower() == "lt":
+                op = "<"
+            elif ctype.lower() == "gt":
+                op = ">"
+            else:
+                op = ctype
+
+            try:
+                val = float(cval)
+            except Exception:
+                continue
+
+            if op not in ("<", ">"):
+                continue
+
+            out.append({"name": name.lower(), "op": op, "val": val})
+        return out
 
     def _on_plot_history_2d_clicked(self) -> None:  # UPDATED
         run_dir = self.run_dir_field.path.strip()
