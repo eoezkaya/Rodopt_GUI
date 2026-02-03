@@ -220,6 +220,15 @@ class Study(QWidget):
     # ==============================================================
     # Objective / Constraint
     # ==============================================================
+    def _num_objectives(self) -> int:
+        n = 0
+        for i in range(self.tabs.count()):
+            wrapper = self.tabs.widget(i)
+            child = getattr(wrapper, "_child", None)
+            if isinstance(child, ObjectiveFunction):
+                n += 1
+        return n
+
     def _next_objective_name(self) -> str:
         try:
             n_obj = sum(
@@ -286,6 +295,10 @@ class Study(QWidget):
 
         self._propagate_problem_type()
         self.tabs.setCurrentWidget(wrapper)
+
+        # NEW: inform General Settings about objective count
+        gs = self._widgets["General Settings"]._child
+        gs.set_num_objectives(self._num_objectives())
 
     def _sync_objective_tab_title(self, wrapper: QWidget, title: str) -> None:
         idx = self.tabs.indexOf(wrapper)
@@ -437,6 +450,10 @@ class Study(QWidget):
         for el in root.findall("objective_function"):
             self._add_objective_tab(from_element=el)
 
+        # NEW: after objectives are loaded, update General Settings visibility
+        gs = self._widgets["General Settings"]._child
+        gs.set_num_objectives(self._num_objectives())
+
         for el in root.findall("constraint_function"):
             self._add_constraint_tab(from_element=el)
 
@@ -486,6 +503,11 @@ class Study(QWidget):
                 self.tabs.removeTab(index)
                 widget.deleteLater()
                 self._mark_dirty()
+
+                # NEW: update objective count after close
+                if "General Settings" in self._widgets:
+                    gs = self._widgets["General Settings"]._child
+                    gs.set_num_objectives(self._num_objectives())
                 return
 
     def _on_problem_type_changed(self, value: str):

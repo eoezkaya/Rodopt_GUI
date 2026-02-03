@@ -3,16 +3,18 @@ from typing import Optional, Dict
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QApplication, QGroupBox,
-    QSizePolicy, QMessageBox
+    QSizePolicy, QMessageBox, QHBoxLayout
 )
 from PyQt6.QtCore import pyqtSignal, QTimer, Qt
 from xml.etree import ElementTree as ET
 import sys, os
+import re
 
 from string_field import StringField
 from integer_spinbox_field import IntegerSpinBoxField
 from string_options_field import StringOptionsField
 from directory_path_field import DirectoryPathField
+from PyQt6.QtWidgets import QSpacerItem
 
 
 class GeneralSettings(QWidget):
@@ -39,9 +41,9 @@ class GeneralSettings(QWidget):
     def __init__(
         self,
         *,
-        label_width: int = 200,
-        text_field_width: int = 600,
-        int_field_width: int = 120,
+        label_width: int = 180,
+        text_field_width: int = 360,
+        int_field_width: int = 100,
         default_problem_name: str = "MyStudy",
         default_problem_type: str = "Optimization",
         default_num_params: int = 3,
@@ -59,6 +61,15 @@ class GeneralSettings(QWidget):
             border-radius: 3px;
         }
         """
+
+        # Style for invalid numeric entries (red border)
+        self._invalid_numeric_style = getattr(
+            self,
+            "_invalid_name_style",
+            "QLineEdit { border: 2px solid red; border-radius: 3px; }",
+        )
+
+        self._num_objectives: int = 1  # NEW: set by Study
 
         # === Main GroupBox ===
         self.group_box = QGroupBox("General Settings", self)
@@ -150,6 +161,76 @@ class GeneralSettings(QWidget):
         )
         self.smart_scheduling_field.valueChanged.connect(lambda _v: self.changed.emit())
 
+        # ==============================================================
+        # NEW: f1/f2 bounds (shown only for Optimization + 2 objectives)
+        # ==============================================================
+        self.f1_min_field = StringField(
+            "f1 min",
+            default="",
+            label_width=label_width,
+            field_width=int_field_width,
+            parent=self.group_box,
+        )
+        self.f1_max_field = StringField(
+            "f1 max",
+            default="",
+            label_width=label_width,
+            field_width=int_field_width,
+            parent=self.group_box,
+        )
+        self.f2_min_field = StringField(
+            "f2 min",
+            default="",
+            label_width=label_width,
+            field_width=int_field_width,
+            parent=self.group_box,
+        )
+        self.f2_max_field = StringField(
+            "f2 max",
+            default="",
+            label_width=label_width,
+            field_width=int_field_width,
+            parent=self.group_box,
+        )
+
+        for f in (self.f1_min_field, self.f1_max_field, self.f2_min_field, self.f2_max_field):
+            f.textChanged.connect(self.changed)
+
+        # NEW: validate numeric input live and show red border on invalid
+        self.f1_min_field.textChanged.connect(lambda: self._validate_numeric_field(self.f1_min_field))
+        self.f1_max_field.textChanged.connect(lambda: self._validate_numeric_field(self.f1_max_field))
+        self.f2_min_field.textChanged.connect(lambda: self._validate_numeric_field(self.f2_min_field))
+        self.f2_max_field.textChanged.connect(lambda: self._validate_numeric_field(self.f2_max_field))
+
+        # create side-by-side rows
+        self._f1_row = QWidget(self.group_box)
+        self._f1_row.setContentsMargins(0, 0, 0, 0)  # NEW: no extra indent from the row widget
+
+        # --- f1 row ---
+        f1_lay = QHBoxLayout(self._f1_row)
+        f1_lay.setContentsMargins(0, 0, 0, 0)
+        f1_lay.setSpacing(12)
+        f1_lay.setAlignment(Qt.AlignmentFlag.AlignLeft)  # NEW
+
+        f1_lay.addWidget(self.f1_min_field)
+        f1_lay.addWidget(self.f1_max_field)
+        f1_lay.addStretch(1)  # NEW: keep items pinned left
+
+        self._f2_row = QWidget(self.group_box)
+        self._f2_row.setContentsMargins(0, 0, 0, 0)  # NEW
+
+        # --- f2 row ---
+        f2_lay = QHBoxLayout(self._f2_row)
+        f2_lay.setContentsMargins(0, 0, 0, 0)
+        f2_lay.setSpacing(12)
+        f2_lay.setAlignment(Qt.AlignmentFlag.AlignLeft)  # NEW
+
+        f2_lay.addWidget(self.f2_min_field)
+        f2_lay.addWidget(self.f2_max_field)
+        f2_lay.addStretch(1)  # NEW
+
+       
+
         # === Layout ===
         inner_layout = QVBoxLayout(self.group_box)
         inner_layout.setContentsMargins(16, 16, 16, 16)
@@ -166,6 +247,9 @@ class GeneralSettings(QWidget):
             self.smart_scheduling_field,
         ):
             inner_layout.addWidget(w, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        inner_layout.addWidget(self._f1_row)
+        inner_layout.addWidget(self._f2_row)
 
         inner_layout.addStretch(1)
         self.group_box.setLayout(inner_layout)
@@ -227,7 +311,17 @@ class GeneralSettings(QWidget):
         self.smart_scheduling_field.setVisible(is_opt)
         self.smart_scheduling_field.setEnabled(is_opt)
 
+        show_bounds = is_opt and (self._num_objectives == 2)
+        self._f1_row.setVisible(show_bounds)
+        self._f1_row.setEnabled(show_bounds)
+        self._f2_row.setVisible(show_bounds)
+        self._f2_row.setEnabled(show_bounds)
+
     # ------------------------------------------------------------------
+    def set_num_objectives(self, n: int) -> None:
+        self._num_objectives = max(0, int(n))
+        self._update_visibility_for_problem_type()
+
     def _schedule_directory_check(self, path: str):
         self._pending_path = path
         self._dir_check_timer.start()
@@ -279,6 +373,12 @@ class GeneralSettings(QWidget):
         if self.problem_type == "Optimization":
             data["smart_scheduling"] = self.smart_scheduling_field.value
 
+        if self.problem_type == "Optimization" and self._num_objectives == 2:
+            data["f1_min"] = self.f1_min_field.text
+            data["f1_max"] = self.f1_max_field.text
+            data["f2_min"] = self.f2_min_field.text
+            data["f2_max"] = self.f2_max_field.text
+
         return data
 
     # ------------------------------------------------------------------
@@ -301,6 +401,23 @@ class GeneralSettings(QWidget):
 
         if self.problem_type == "Optimization":
             ET.SubElement(root, "smart_scheduling").text = self.smart_scheduling_field.value
+
+        is_opt = (self.problem_type_field.value == "Optimization")
+        if is_opt and self._num_objectives == 2:
+            # CHANGED: write only non-empty bounds
+            f1_min = self.f1_min_field.text.strip()
+            f1_max = self.f1_max_field.text.strip()
+            f2_min = self.f2_min_field.text.strip()
+            f2_max = self.f2_max_field.text.strip()
+
+            if f1_min:
+                ET.SubElement(root, "f1_min").text = f1_min
+            if f1_max:
+                ET.SubElement(root, "f1_max").text = f1_max
+            if f2_min:
+                ET.SubElement(root, "f2_min").text = f2_min
+            if f2_max:
+                ET.SubElement(root, "f2_max").text = f2_max
 
         return root
 
@@ -367,6 +484,12 @@ class GeneralSettings(QWidget):
         else:
             self.smart_scheduling_field.value = "Off"
 
+        # NEW: load bounds (even if currently hidden)
+        self.f1_min_field.text = get("f1_min")
+        self.f1_max_field.text = get("f1_max")
+        self.f2_min_field.text = get("f2_min")
+        self.f2_max_field.text = get("f2_max")
+
         self._update_visibility_for_problem_type()
 
     def _reset_to_defaults(self) -> None:
@@ -379,6 +502,10 @@ class GeneralSettings(QWidget):
         self.sampling_field.value = "Latin Hypercube"
         self.smart_scheduling_field.value = "Off"
         self.working_dir_field.path = ""
+        self.f1_min_field.text = ""
+        self.f1_max_field.text = ""
+        self.f2_min_field.text = ""
+        self.f2_max_field.text = ""
         self._update_visibility_for_problem_type()
 
     def _on_problem_name_changed(self, text: str) -> None:
@@ -420,3 +547,31 @@ class GeneralSettings(QWidget):
                 "Invalid name. Use only letters, digits, and underscore; "
                 "no spaces or special characters."
             )
+
+    def _is_numeric_text(self, s: str) -> bool:
+        """Return True if s is a valid number representation."""
+        s = (s or "").strip()
+        if s == "":
+            return True  # allow empty (no value)
+        try:
+            float(s)
+            return True
+        except ValueError:
+            return False
+
+    def _validate_numeric_field(self, field) -> None:
+        """Apply/remove red border based on numeric validity of the field."""
+        text = field.text() if callable(getattr(field, "text", None)) else getattr(field, "text", "")
+        text = text if isinstance(text, str) else str(text)
+
+        valid = self._is_numeric_text(text)
+
+        # access underlying QLineEdit from StringField
+        edit = field._edit  # consistent with your problem_name_field usage
+
+        if valid:
+            edit.setStyleSheet("")
+            edit.setToolTip("")
+        else:
+            edit.setStyleSheet(self._invalid_numeric_style)
+            edit.setToolTip("Invalid value. Please enter a numeric value (e.g. -1, 0.5, 1e-3).")
