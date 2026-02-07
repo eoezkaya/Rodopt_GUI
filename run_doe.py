@@ -9,7 +9,7 @@ import csv
 from pathlib import Path
 import matplotlib.pyplot as plt 
 import xml.etree.ElementTree as ET
-from PyQt6.QtGui import QPixmap, QTransform, QIcon
+from PyQt6.QtGui import QPixmap, QTransform, QIcon, QTextCursor, QColor, QPainter  # UPDATED
 from csv_table_updater import CSVTableUpdater
 from config_store import load_executable
 from config_store import save_executable
@@ -38,7 +38,6 @@ from PyQt6.QtWidgets import (
 )
 
 from PyQt6.QtCore import Qt, QSize, QProcess, QTimer
-from PyQt6.QtGui import QIcon, QPixmap, QColor, QPainter
 
 from file_path_field import FilePathField
 
@@ -129,7 +128,7 @@ class RunDoE(QWidget):
         self.btn_status.setIconSize(icon_size)
         self.btn_status.setAutoRaise(True)
         self.btn_status.setFixedSize(button_size + 6, button_size + 6)
-        self.btn_status.setToolTip("Show process status (from *_process_pool.log)")
+        self.btn_status.setToolTip("Show process status")
         self.btn_status.clicked.connect(self._on_show_process_status_clicked)
         self.btn_status.setEnabled(True)  # always active
 
@@ -141,6 +140,14 @@ class RunDoE(QWidget):
         self.btn_plot_2d.setToolTip("Plot optimization history")
         self.btn_plot_2d.clicked.connect(self._on_plot_history_2d_clicked)
         self.btn_plot_2d.setEnabled(True)  # match Pareto button initial state
+
+        self.show_main_log_btn = QToolButton(self)
+        self.show_main_log_btn.setIcon(QIcon(str(self.ICON_DIR / "log.svg")))
+        self.show_main_log_btn.setIconSize(icon_size)  # match other header icons
+        self.show_main_log_btn.setAutoRaise(True)
+        self.show_main_log_btn.setFixedSize(button_size + 6, button_size + 6)
+        self.show_main_log_btn.setToolTip("Show run log")
+        self.show_main_log_btn.clicked.connect(self._on_show_main_log_clicked)
 
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
@@ -154,6 +161,7 @@ class RunDoE(QWidget):
         header_layout.addWidget(self.btn_plot)
         header_layout.addWidget(self.btn_plot_2d)  # NEW: next to Pareto
         header_layout.addWidget(self.btn_status)
+        header_layout.addWidget(self.show_main_log_btn)
 
 
         # ==========================================================
@@ -220,7 +228,7 @@ class RunDoE(QWidget):
             inner_layout.addWidget(w)
 
         # ==========================================================
-        # === Table to display DoE_history.csv ===
+        # === Table to display history.csv ===
         # ==========================================================
         self.table = QTableWidget(self)
         self.table.setAlternatingRowColors(True)
@@ -557,10 +565,10 @@ class RunDoE(QWidget):
 
             csv_path = os.path.join(run_dir, "history.csv")
             if not os.path.isfile(csv_path):
-                alt = os.path.join(run_dir, "DoE_history.csv")
+                alt = os.path.join(run_dir, "history.csv")
                 csv_path = alt if os.path.isfile(alt) else ""
             if not csv_path:
-                QMessageBox.warning(self, "Missing File", "history.csv / DoE_history.csv not found.")
+                QMessageBox.warning(self, "Missing File", "history.csv not found.")
                 return
 
             if not getattr(self, "_xml_path", None):
@@ -615,6 +623,74 @@ class RunDoE(QWidget):
         dlg.setLayout(layout)
         dlg.exec()
 
+    def _on_show_main_log_clicked(self) -> None:
+        try:
+            run_dir = self.run_dir_field.path.strip()
+            if not run_dir or not os.path.isdir(run_dir):
+                QMessageBox.warning(self, "No Run Directory", "Run directory not found.")
+                return
+
+            doe_log = os.path.join(run_dir, "doe.log")
+            opt_log = os.path.join(run_dir, "optimization.log")
+
+            log_path = doe_log if os.path.isfile(doe_log) else (opt_log if os.path.isfile(opt_log) else "")
+            if not log_path:
+                QMessageBox.information(
+                    self,
+                    "Missing Log",
+                    "Neither doe.log nor optimization.log was found in the run directory.",
+                )
+                return
+
+            self._show_text_file_dialog(os.path.basename(log_path), log_path)
+        except Exception as e:
+            QMessageBox.critical(self, "Log Error", f"Failed to show log:\n{e}")
+
+    def _show_text_file_dialog(self, title: str, file_path: str) -> None:
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.setMinimumSize(900, 600)
+
+        editor = QTextEdit(dlg)
+        editor.setReadOnly(True)
+
+        def _load_file(scroll_to_end: bool = True) -> None:
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                    editor.setPlainText(f.read())
+            except Exception as e:
+                QMessageBox.critical(self, "Open Error", f"Failed to open log file:\n{e}")
+                return
+
+            if scroll_to_end:
+                editor.moveCursor(QTextCursor.MoveOperation.End)
+                QTimer.singleShot(
+                    0,
+                    lambda: editor.verticalScrollBar().setValue(editor.verticalScrollBar().maximum()),
+                )
+
+        # Top bar with reload button on the right
+        reload_btn = QToolButton(dlg)
+        reload_btn.setAutoRaise(True)
+        reload_btn.setToolTip("Reload")
+        reload_btn.setIcon(QIcon(str(self.ICON_DIR / "reload.svg")))
+        reload_btn.clicked.connect(lambda: _load_file(scroll_to_end=True))
+
+        top_bar = QHBoxLayout()
+        top_bar.setContentsMargins(0, 0, 0, 0)
+        top_bar.addStretch(1)
+        top_bar.addWidget(reload_btn)
+
+        layout = QVBoxLayout(dlg)
+        layout.addLayout(top_bar)
+        layout.addWidget(editor)
+
+        dlg.setLayout(layout)
+
+        # initial load
+        _load_file(scroll_to_end=True)
+
+        dlg.exec()
 
     # ==========================================================
     # === CSV monitoring ===

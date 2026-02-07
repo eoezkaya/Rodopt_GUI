@@ -669,8 +669,8 @@ class ObjectiveFunction(QWidget):
         filename = os.path.basename(raw)
 
         # normalize display to basename only
-        if filename != self.training_file.path:
-            self.training_file.path = filename
+#        if filename != self.training_file.path:
+#            self.training_file.path = filename
 
         if not filename:
             # empty is considered invalid here

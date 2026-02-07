@@ -3,4 +3,6 @@
 *.csv
 .DS_Store
 Tests/*
+dist/*
+build/*
 
