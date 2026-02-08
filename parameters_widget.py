@@ -107,11 +107,17 @@ class Parameters(QWidget):
         self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         hh = self.table.horizontalHeader()
-        hh.setSectionResizeMode(self.COL_NAME, QHeaderView.ResizeMode.Stretch)
-        hh.setSectionResizeMode(self.COL_TYPE, QHeaderView.ResizeMode.ResizeToContents)
+
+        # CHANGED: keep total table width stable by stretching other columns (not "name")
+        hh.setSectionResizeMode(self.COL_NAME, QHeaderView.ResizeMode.Interactive)
+        hh.setSectionResizeMode(self.COL_TYPE, QHeaderView.ResizeMode.Interactive)
         hh.setSectionResizeMode(self.COL_INCR, QHeaderView.ResizeMode.ResizeToContents)
-        hh.setSectionResizeMode(self.COL_LOWER, QHeaderView.ResizeMode.Interactive)
-        hh.setSectionResizeMode(self.COL_UPPER, QHeaderView.ResizeMode.Interactive)
+        hh.setSectionResizeMode(self.COL_LOWER, QHeaderView.ResizeMode.Stretch)
+        hh.setSectionResizeMode(self.COL_UPPER, QHeaderView.ResizeMode.Stretch)
+
+        # CHANGED: "name" a bit narrower, "type" a bit wider (adjust values as desired)
+        self.table.setColumnWidth(self.COL_NAME, 400)
+        self.table.setColumnWidth(self.COL_TYPE, 160)
 
         self.add_btn = QPushButton("Add parameter", self)
         self.del_btn = QPushButton("Remove selected", self)
@@ -218,6 +224,16 @@ class Parameters(QWidget):
         self._add_row()
 
     def _remove_selected_rows_and_emit(self) -> None:
+        # NEW: do not allow removing the last remaining parameter
+        if self.table.rowCount() <= 1:
+            QMessageBox.information(
+                self,
+                "Cannot remove",
+                "At least one parameter is required.",
+                QMessageBox.StandardButton.Ok,
+            )
+            return
+
         sm = self.table.selectionModel()
         rows: list[int] = []
 
@@ -231,6 +247,16 @@ class Parameters(QWidget):
                 rows = [cur.row()]
 
         if not rows:
+            return
+
+        # NEW: if selection would delete all rows, block it
+        if self.table.rowCount() - len(set(rows)) < 1:
+            QMessageBox.information(
+                self,
+                "Cannot remove",
+                "At least one parameter is required.",
+                QMessageBox.StandardButton.Ok,
+            )
             return
 
         for r in sorted(set(rows), reverse=True):
