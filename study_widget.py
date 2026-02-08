@@ -529,13 +529,22 @@ class Study(QWidget):
         gs = self._widgets["General Settings"]._child
         par = self._widgets["Parameters"]._child
 
-        gs.num_params_field.valueChanged.connect(
-            lambda n: par.set_rows(par.snapshot()[:n])
-            if par.row_count() > n else None
-        )
-        par.rowCountChanged.connect(
-            lambda n: setattr(gs.num_params_field, "value", n)
-        )
+        # NEW: keep Parameters row count in sync for BOTH increase and decrease
+        gs.num_params_field.valueChanged.connect(lambda n: par.ensure_row_count(n))
+
+        # Keep General Settings in sync when user edits Parameters table
+        par.rowCountChanged.connect(lambda n: setattr(gs.num_params_field, "value", n))
+
+        # NEW: propagate param info to all ObjectiveFunction tabs
+        def _push_param_info(_n=None, _names=None):
+            n, names = par.snapshot().__len__(), [r["name"] for r in par.snapshot() if r.get("name")]
+            for wrapper in self._widgets.values():
+                child = getattr(wrapper, "_child", None)
+                if isinstance(child, ObjectiveFunction):
+                    child.set_parameter_info(n, names)
+
+        par.paramInfoChanged.connect(lambda n, names: _push_param_info(n, names))
+        _push_param_info()  # initial push
 
     def to_xml(self, *, root_tag: str = "optimization_study") -> ET.Element:
         root = ET.Element(root_tag)

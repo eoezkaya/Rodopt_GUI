@@ -4,16 +4,18 @@ from typing import Optional, Dict
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QApplication, QSizePolicy, QGroupBox
+    QApplication, QSizePolicy, QGroupBox,
+    QToolButton, QDialog, QTableWidget, QTableWidgetItem, QMessageBox
 )
+from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import pyqtSignal, Qt
 from xml.etree import ElementTree as ET
 import sys
 import os
 import re
+import csv
+from pathlib import Path
 from PyQt6.QtWidgets import QLineEdit
-
-
 
 from string_field import StringField
 from string_options_field import StringOptionsField
@@ -52,6 +54,9 @@ class ObjectiveFunction(QWidget):
         self._default_name = "ObjectiveFunction"
         self._default_execution_location = "local"
         self._default_workdir = os.getcwd()
+
+        self._num_params: int = 0
+        self._param_names: list[str] = []
 
         # ------------------------------------------------------------
         # Group box
@@ -268,6 +273,16 @@ class ObjectiveFunction(QWidget):
 
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
+
+        # Add "view training data" button next to Clear at the bottom
+        self.ICON_DIR = getattr(self, "ICON_DIR", Path(__file__).resolve().parent / "images")
+        self.btn_view_training_data = QToolButton(self.group_box)
+        self.btn_view_training_data.setAutoRaise(True)
+        self.btn_view_training_data.setToolTip("View training data")
+        self.btn_view_training_data.setIcon(QIcon(str(Path(self.ICON_DIR) / "log.svg")))
+        self.btn_view_training_data.clicked.connect(self._on_view_training_data_clicked)
+
+        btn_row.addWidget(self.btn_view_training_data)
         btn_row.addWidget(self.clear_button)
         inner.addLayout(btn_row)
 
@@ -625,7 +640,89 @@ class ObjectiveFunction(QWidget):
 
         self._on_derivative_info_changed(self.derivative_info_field.value)
 
-    
+    def _resolve_training_csv_path(self) -> str:
+        raw = (self.training_file.path or "").strip()
+        if not raw:
+            return ""
+
+        # if user gave an explicit path, check it directly
+        if os.path.isabs(raw) or os.path.dirname(raw):
+            return os.path.abspath(raw)
+
+        # filename only -> look in working directory
+        wd = ""
+        if hasattr(self, "working_dir_field"):
+            wd = (self.working_dir_field.path or "").strip()
+
+        return os.path.abspath(os.path.join(wd, raw)) if wd else os.path.abspath(raw)
+
+    def _on_view_training_data_clicked(self) -> None:
+        csv_path = self._resolve_training_csv_path()
+        if not csv_path or not os.path.isfile(csv_path):
+            QMessageBox.warning(self, "Missing File", "Training CSV file not found.")
+            return
+
+        try:
+            with open(csv_path, "r", encoding="utf-8", errors="replace", newline="") as f:
+                rows = list(csv.reader(f))
+        except Exception as e:
+            QMessageBox.critical(self, "Read Error", f"Failed to read CSV:\n{e}")
+            return
+
+        if not rows:
+            QMessageBox.information(self, "Empty CSV", "Training CSV is empty.")
+            return
+
+        # Training data usually has no header; use parameter names + objective name as headers.
+        data = rows
+        max_cols = max((len(r) for r in data), default=0)
+
+        param_names = list(getattr(self, "_param_names", []) or [])
+        n = len(param_names)
+
+        obj_name = ""
+        if hasattr(self, "name_field"):
+            obj_name = (self.name_field.text or "").strip()
+        obj_name = obj_name or "Objective"
+
+        # Build headers:
+        #   col[0..n-1] => param_names
+        #   col[n]      => objective name
+        #   remaining   => generic names
+        header: list[str] = []
+        for i in range(max_cols):
+            if i < n:
+                header.append(param_names[i] or f"x{i+1}")
+            elif i == n:
+                header.append(obj_name)
+            else:
+                header.append(f"C{i+1}")
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(os.path.basename(csv_path))
+        dlg.setMinimumSize(900, 600)
+
+        table = QTableWidget(dlg)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setColumnCount(len(header))
+        table.setHorizontalHeaderLabels(header)
+        table.setRowCount(len(data))
+
+        for r, row in enumerate(data):
+            for c in range(len(header)):
+                val = row[c] if c < len(row) else ""
+                item = QTableWidgetItem(val)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                table.setItem(r, c, item)
+
+        table.resizeColumnsToContents()
+
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(table)
+        dlg.setLayout(layout)
+        dlg.exec()
+
     def _name_line_edit(self) -> QLineEdit | None:
         """
         Safely obtain the internal QLineEdit of StringField.
@@ -690,6 +787,8 @@ class ObjectiveFunction(QWidget):
                 tooltip="Training data file must have .csv extension.",
             )
 
+        
+
     def _set_filefield_valid(self, field: FilePathField, *, valid: bool, tooltip: str) -> None:
         """
         Simple visual validation for a single-field FilePathField:
@@ -709,6 +808,14 @@ class ObjectiveFunction(QWidget):
                 "QLineEdit { border: 2px solid red; border-radius: 3px; }"
             )
         edit.setToolTip(tooltip)
+
+    def set_parameter_info(self, num_params: int, names: list[str]) -> None:
+        self._num_params = int(num_params)
+        self._param_names = list(names)
+        # hook point: update any UI elements that depend on params here
+
+    def parameter_info(self) -> tuple[int, list[str]]:
+        return self._num_params, list(self._param_names)
 
 # ---------------- Demo ----------------
 if __name__ == "__main__":

@@ -72,6 +72,7 @@ class Parameters(QWidget):
     """
     changed = pyqtSignal()
     rowCountChanged = pyqtSignal(int)
+    paramInfoChanged = pyqtSignal(int, list)  # (num_params, names)
 
     COL_NAME = 0
     COL_TYPE = 1
@@ -98,6 +99,11 @@ class Parameters(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(self.table.EditTrigger.NoEditTriggers)
+
+        # NEW: make selection row-based so "Remove selected" removes the intended row(s)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
+
         self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         hh = self.table.horizontalHeader()
@@ -141,6 +147,8 @@ class Parameters(QWidget):
             self._add_row(default_index=i, emit=False)
         self._fix_default_names()
         self.rowCountChanged.emit(self.table.rowCount())
+
+        
 
     # ---------- Internals ----------
     def _wire_editors(self, r: int) -> None:
@@ -204,17 +212,35 @@ class Parameters(QWidget):
         if emit:
             self.rowCountChanged.emit(self.table.rowCount())
             self.changed.emit()
+            self._emit_param_info()  # NEW
 
     def _add_row_and_emit(self) -> None:
         self._add_row()
 
     def _remove_selected_rows_and_emit(self) -> None:
-        sel = sorted({idx.row() for idx in self.table.selectedIndexes()}, reverse=True)
-        for r in sel:
-            self.table.removeRow(r)
+        sm = self.table.selectionModel()
+        rows: list[int] = []
+
+        if sm is not None:
+            rows = [idx.row() for idx in sm.selectedRows()]
+
+        # Fallback: remove the row of the current cell
+        if not rows and sm is not None:
+            cur = sm.currentIndex()
+            if cur.isValid():
+                rows = [cur.row()]
+
+        if not rows:
+            return
+
+        for r in sorted(set(rows), reverse=True):
+            if 0 <= r < self.table.rowCount():
+                self.table.removeRow(r)
+
         self._fix_default_names()
         self.rowCountChanged.emit(self.table.rowCount())
         self.changed.emit()
+        self._emit_param_info()  # NEW
 
     def _fix_default_names(self) -> None:
         default_pat = re.compile(r"^x\d+$", re.IGNORECASE)
@@ -276,6 +302,38 @@ class Parameters(QWidget):
 
         # keep existing behavior that editing marks widget dirty
         self.changed.emit()
+        self._emit_param_info()  # NEW
+
+    def _emit_param_info(self) -> None:
+        snap = self.snapshot()
+        names = [str(r.get("name", "")).strip() for r in snap if str(r.get("name", "")).strip()]
+        self.paramInfoChanged.emit(len(snap), names)
+
+    def ensure_row_count(self, n: int) -> None:
+        """Ensure the table has exactly n rows (adds/removes rows as needed)."""
+        n = max(0, int(n))
+        cur = self.table.rowCount()
+
+        if n == cur:
+            return
+
+        if n < cur:
+            # remove from bottom
+            for r in range(cur - 1, n - 1, -1):
+                self.table.removeRow(r)
+            self._fix_default_names()
+            self.rowCountChanged.emit(self.table.rowCount())
+            self.changed.emit()
+            self._emit_param_info()
+            return
+
+        # n > cur: add rows
+        for _ in range(cur, n):
+            self._add_row(default_index=None, emit=False)
+        self._fix_default_names()
+        self.rowCountChanged.emit(self.table.rowCount())
+        self.changed.emit()
+        self._emit_param_info()
 
     # ---------- Public API ----------
     def row_count(self) -> int:
@@ -321,6 +379,7 @@ class Parameters(QWidget):
         self._fix_default_names()
         self.rowCountChanged.emit(self.table.rowCount())
         self.changed.emit()
+        self._emit_param_info()  # NEW
 
     # ---------- Validation ----------
     def _check_constraints(self) -> None:
