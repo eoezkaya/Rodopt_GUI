@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QToolButton, QDialog, QTableWidget, QTableWidgetItem, QMessageBox
 )
 from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QSize
 from xml.etree import ElementTree as ET
 import sys
 import os
@@ -242,9 +242,12 @@ class ObjectiveFunction(QWidget):
         self.remote_server_widget.setVisible(False)
 
         # ------------------------------------------------------------
-        # Clear button
+        # Clear button (icon-only)
         # ------------------------------------------------------------
-        self.clear_button = QPushButton("Clear", self.group_box)
+        self.ICON_DIR = getattr(self, "ICON_DIR", Path(__file__).resolve().parent / "images")
+        self.clear_button = QPushButton(self.group_box)
+        self.clear_button.setToolTip("Clear")
+        self.clear_button.setIcon(QIcon(str(Path(self.ICON_DIR) / "clear.svg")))
         self.clear_button.clicked.connect(self.clear_fields)
 
         # ------------------------------------------------------------
@@ -275,12 +278,21 @@ class ObjectiveFunction(QWidget):
         btn_row.addStretch(1)
 
         # Add "view training data" button next to Clear at the bottom
-        self.ICON_DIR = getattr(self, "ICON_DIR", Path(__file__).resolve().parent / "images")
         self.btn_view_training_data = QToolButton(self.group_box)
         self.btn_view_training_data.setAutoRaise(True)
         self.btn_view_training_data.setToolTip("View training data")
         self.btn_view_training_data.setIcon(QIcon(str(Path(self.ICON_DIR) / "log.svg")))
         self.btn_view_training_data.clicked.connect(self._on_view_training_data_clicked)
+
+        # NEW: enforce same width/height in layout
+        tool_btn_size = 34
+        icon_sz = QSize(18, 18)
+
+        self.clear_button.setFixedSize(tool_btn_size, tool_btn_size)
+        self.clear_button.setIconSize(icon_sz)
+
+        self.btn_view_training_data.setFixedSize(tool_btn_size, tool_btn_size)
+        self.btn_view_training_data.setIconSize(icon_sz)
 
         btn_row.addWidget(self.btn_view_training_data)
         btn_row.addWidget(self.clear_button)
