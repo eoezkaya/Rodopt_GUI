@@ -5,7 +5,8 @@ from typing import Optional, Dict
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QApplication, QSizePolicy, QGroupBox,
-    QToolButton, QDialog, QTableWidget, QTableWidgetItem, QMessageBox, QMenu
+    QToolButton, QDialog, QTableWidget, QTableWidgetItem, QMessageBox, QMenu,
+    QLabel
 )
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import pyqtSignal, Qt, QSize
@@ -685,12 +686,12 @@ class ObjectiveFunction(QWidget):
             QMessageBox.information(self, "Empty CSV", "Training CSV is empty.")
             return
 
-        # Training data usually has no header; use parameter names + objective name as headers.
         data = rows
         max_cols = max((len(r) for r in data), default=0)
 
         param_names = list(getattr(self, "_param_names", []) or [])
         n = len(param_names)
+        obj_col = n  # objective column is right after parameters
 
         obj_name = (self.name_field.text or "").strip() if hasattr(self, "name_field") else ""
         obj_name = obj_name or "Objective"
@@ -699,14 +700,71 @@ class ObjectiveFunction(QWidget):
         for i in range(max_cols):
             if i < n:
                 header.append(param_names[i] or f"x{i+1}")
-            elif i == n:
+            elif i == obj_col:
                 header.append(obj_name)
             else:
                 header.append(f"C{i+1}")
 
+        def _objective_values() -> list[float]:
+            vals: list[float] = []
+            if not (0 <= obj_col < max_cols):
+                return vals
+            for row in data:
+                if obj_col >= len(row):
+                    continue
+                s = (row[obj_col] or "").strip().replace(",", ".")
+                try:
+                    vals.append(float(s))
+                except ValueError:
+                    continue
+            return vals
+
+        def _mean_std(vals: list[float]) -> tuple[float | None, float | None]:
+            if not vals:
+                return (None, None)
+            mean = sum(vals) / len(vals)
+            if len(vals) < 2:
+                return (mean, 0.0)
+            var = sum((v - mean) ** 2 for v in vals) / (len(vals) - 1)
+            return (mean, var ** 0.5)
+
+        def _outlier_rows_3sigma() -> set[int]:
+            vals_idx: list[tuple[int, float]] = []
+            if not (0 <= obj_col < max_cols):
+                return set()
+            for r, row in enumerate(data):
+                if obj_col >= len(row):
+                    continue
+                s = (row[obj_col] or "").strip().replace(",", ".")
+                try:
+                    vals_idx.append((r, float(s)))
+                except ValueError:
+                    continue
+            if len(vals_idx) < 2:
+                return set()
+            vals = [v for _, v in vals_idx]
+            mean = sum(vals) / len(vals)
+            var = sum((v - mean) ** 2 for v in vals) / (len(vals) - 1)
+            std = var ** 0.5
+            if std <= 0:
+                return set()
+            return {ri for ri, v in vals_idx if abs(v - mean) > 3.0 * std}
+
         dlg = QDialog(self)
         dlg.setWindowTitle(os.path.basename(csv_path))
         dlg.setMinimumSize(900, 600)
+
+        # NEW: stats label (top-right)
+        stats_label = QLabel(dlg)
+        stats_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        def _refresh_stats_label() -> None:
+            vals = _objective_values()
+            mean, std = _mean_std(vals)
+            if mean is None or std is None:
+                stats_label.setText(f"{obj_name}: mean = —   std = —")
+            else:
+                stats_label.setText(f"{obj_name}: mean = {mean:.6g}   std = {std:.6g}")
 
         table = QTableWidget(dlg)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -716,17 +774,25 @@ class ObjectiveFunction(QWidget):
         table.setHorizontalHeaderLabels(header)
         table.setRowCount(len(data))
 
-        for r, row in enumerate(data):
-            for c in range(len(header)):
-                val = row[c] if c < len(row) else ""
-                item = QTableWidgetItem(val)
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                table.setItem(r, c, item)
+        def _populate_table_colors() -> None:
+            outliers = _outlier_rows_3sigma()
+            for r, row in enumerate(data):
+                is_outlier = r in outliers
+                for c in range(len(header)):
+                    val = row[c] if c < len(row) else ""
+                    item = QTableWidgetItem(val)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    if is_outlier:
+                        item.setBackground(Qt.GlobalColor.red)
+                        item.setForeground(Qt.GlobalColor.white)
+                    table.setItem(r, c, item)
 
+        _populate_table_colors()
         table.resizeColumnsToContents()
+        _refresh_stats_label()
 
         # ------------------------------------------------------------
-        # NEW: Right-click context menu to delete row(s) and persist to CSV
+        # Right-click context menu to delete row(s) and persist to CSV
         # ------------------------------------------------------------
         table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
@@ -737,7 +803,6 @@ class ObjectiveFunction(QWidget):
             return sorted({idx.row() for idx in sm.selectedRows()})
 
         def _rewrite_csv_without_rows(rows_to_delete: list[int]) -> None:
-            # table row indices map 1:1 to CSV row indices because we display "data = rows"
             keep = [r for i, r in enumerate(data) if i not in set(rows_to_delete)]
             with open(csv_path, "w", encoding="utf-8", newline="") as f:
                 w = csv.writer(f)
@@ -764,10 +829,14 @@ class ObjectiveFunction(QWidget):
                 QMessageBox.critical(dlg, "Write Error", f"Failed to update CSV:\n{e}")
                 return
 
-            # remove from UI bottom-up
             for r in sorted(rows_to_delete, reverse=True):
                 if 0 <= r < table.rowCount():
                     table.removeRow(r)
+
+            # NEW: stats + outliers depend on current data
+            _refresh_stats_label()
+            # recolor remaining rows (indices changed)
+            _populate_table_colors()
 
         def _on_context_menu(pos) -> None:
             menu = QMenu(table)
@@ -778,7 +847,12 @@ class ObjectiveFunction(QWidget):
 
         table.customContextMenuRequested.connect(_on_context_menu)
 
+        # Layout with a top row for stats (right aligned)
         layout = QVBoxLayout(dlg)
+        top = QHBoxLayout()
+        top.addStretch(1)
+        top.addWidget(stats_label)
+        layout.addLayout(top)
         layout.addWidget(table)
         dlg.setLayout(layout)
         dlg.exec()
