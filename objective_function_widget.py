@@ -5,7 +5,7 @@ from typing import Optional, Dict
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QApplication, QSizePolicy, QGroupBox,
-    QToolButton, QDialog, QTableWidget, QTableWidgetItem, QMessageBox
+    QToolButton, QDialog, QTableWidget, QTableWidgetItem, QMessageBox, QMenu
 )
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import pyqtSignal, Qt, QSize
@@ -692,15 +692,9 @@ class ObjectiveFunction(QWidget):
         param_names = list(getattr(self, "_param_names", []) or [])
         n = len(param_names)
 
-        obj_name = ""
-        if hasattr(self, "name_field"):
-            obj_name = (self.name_field.text or "").strip()
+        obj_name = (self.name_field.text or "").strip() if hasattr(self, "name_field") else ""
         obj_name = obj_name or "Objective"
 
-        # Build headers:
-        #   col[0..n-1] => param_names
-        #   col[n]      => objective name
-        #   remaining   => generic names
         header: list[str] = []
         for i in range(max_cols):
             if i < n:
@@ -717,6 +711,7 @@ class ObjectiveFunction(QWidget):
         table = QTableWidget(dlg)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         table.setColumnCount(len(header))
         table.setHorizontalHeaderLabels(header)
         table.setRowCount(len(data))
@@ -729,6 +724,59 @@ class ObjectiveFunction(QWidget):
                 table.setItem(r, c, item)
 
         table.resizeColumnsToContents()
+
+        # ------------------------------------------------------------
+        # NEW: Right-click context menu to delete row(s) and persist to CSV
+        # ------------------------------------------------------------
+        table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+
+        def _selected_table_rows() -> list[int]:
+            sm = table.selectionModel()
+            if sm is None:
+                return []
+            return sorted({idx.row() for idx in sm.selectedRows()})
+
+        def _rewrite_csv_without_rows(rows_to_delete: list[int]) -> None:
+            # table row indices map 1:1 to CSV row indices because we display "data = rows"
+            keep = [r for i, r in enumerate(data) if i not in set(rows_to_delete)]
+            with open(csv_path, "w", encoding="utf-8", newline="") as f:
+                w = csv.writer(f)
+                w.writerows(keep)
+            data[:] = keep  # keep in-memory list consistent
+
+        def _delete_selected_rows() -> None:
+            rows_to_delete = _selected_table_rows()
+            if not rows_to_delete:
+                return
+
+            ans = QMessageBox.question(
+                dlg,
+                "Delete rows",
+                f"Delete {len(rows_to_delete)} selected row(s) from the table and '{os.path.basename(csv_path)}'?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if ans != QMessageBox.StandardButton.Yes:
+                return
+
+            try:
+                _rewrite_csv_without_rows(rows_to_delete)
+            except Exception as e:
+                QMessageBox.critical(dlg, "Write Error", f"Failed to update CSV:\n{e}")
+                return
+
+            # remove from UI bottom-up
+            for r in sorted(rows_to_delete, reverse=True):
+                if 0 <= r < table.rowCount():
+                    table.removeRow(r)
+
+        def _on_context_menu(pos) -> None:
+            menu = QMenu(table)
+            act_delete = menu.addAction("Delete selected row(s)")
+            chosen = menu.exec(table.viewport().mapToGlobal(pos))
+            if chosen == act_delete:
+                _delete_selected_rows()
+
+        table.customContextMenuRequested.connect(_on_context_menu)
 
         layout = QVBoxLayout(dlg)
         layout.addWidget(table)
