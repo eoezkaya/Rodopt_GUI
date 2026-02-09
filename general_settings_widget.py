@@ -71,6 +71,9 @@ class GeneralSettings(QWidget):
 
         self._num_objectives: int = 1  # NEW: set by Study
 
+        # NEW: track last auto-filled value so we don't overwrite user edits
+        self._last_inner_iter_autofill: Optional[str] = None
+
         # === Main GroupBox ===
         self.group_box = QGroupBox("General Settings", self)
         self.group_box.setMinimumWidth(700)
@@ -229,7 +232,22 @@ class GeneralSettings(QWidget):
         f2_lay.addWidget(self.f2_max_field)
         f2_lay.addStretch(1)  # NEW
 
-       
+        # NEW: Number of inner iterations
+        self.num_inner_iterations_field = StringField(
+            "Number of inner iterations",
+            default="",
+            label_width=label_width,
+            field_width=text_field_width,
+            parent=self.group_box,
+        )
+        self.num_inner_iterations_field.textChanged.connect(lambda _t: self.changed.emit())
+        # validate numeric like other numeric string fields (if you use this helper elsewhere)
+        try:
+            self.num_inner_iterations_field.textChanged.connect(
+                lambda _t: self._validate_numeric_field(self.num_inner_iterations_field)
+            )
+        except Exception:
+            pass
 
         # === Layout ===
         inner_layout = QVBoxLayout(self.group_box)
@@ -241,6 +259,7 @@ class GeneralSettings(QWidget):
             self.problem_type_field,
             self.num_params_field,
             self.num_samples_field,
+            self.num_inner_iterations_field,  # NEW: place right after number_of_samples_field
             self.sampling_field,
             self.batch_size_field,
             self.working_dir_field,
@@ -322,6 +341,33 @@ class GeneralSettings(QWidget):
         self._num_objectives = max(0, int(n))
         self._update_visibility_for_problem_type()
 
+    def set_num_parameters(self, num_params: int) -> None:
+        """Auto-fill inner iterations as 10000 * number of parameters (unless user changed it)."""
+        try:
+            n = max(0, int(num_params))
+        except Exception:
+            n = 0
+
+        auto = str(10000 * n)
+
+        cur = (getattr(self.num_inner_iterations_field, "text", "") or "").strip()
+        if (not cur) or (self._last_inner_iter_autofill is not None and cur == self._last_inner_iter_autofill):
+            # IMPORTANT: don't mark study dirty when we auto-fill defaults
+            le = None
+            try:
+                le = self.num_inner_iterations_field._edit  # StringField convention in this project
+            except Exception:
+                le = None
+
+            if le is not None:
+                le.blockSignals(True)
+            try:
+                self.num_inner_iterations_field.text = auto
+                self._last_inner_iter_autofill = auto
+            finally:
+                if le is not None:
+                    le.blockSignals(False)
+
     def _schedule_directory_check(self, path: str):
         self._pending_path = path
         self._dir_check_timer.start()
@@ -382,7 +428,7 @@ class GeneralSettings(QWidget):
         return data
 
     # ------------------------------------------------------------------
-    def to_xml(self, *, root_tag: str = "general_settings") -> ET.Element:
+    def to_xml(self, *, root_tag: str = "general_settings", include_empty: bool = False) -> ET.Element:
         root = ET.Element(root_tag)
 
         ET.SubElement(root, "problem_type").text = self.problem_type
@@ -418,6 +464,11 @@ class GeneralSettings(QWidget):
                 ET.SubElement(root, "f2_min").text = f2_min
             if f2_max:
                 ET.SubElement(root, "f2_max").text = f2_max
+
+        # NEW
+        iters = (self.num_inner_iterations_field.text or "").strip()
+        if iters or include_empty:
+            ET.SubElement(root, "number_of_inner_iterations").text = iters
 
         return root
 
@@ -490,6 +541,10 @@ class GeneralSettings(QWidget):
         self.f2_min_field.text = get("f2_min")
         self.f2_max_field.text = get("f2_max")
 
+        # NEW
+        el = element.find("number_of_inner_iterations")
+        self.num_inner_iterations_field.text = el.text.strip() if el is not None and el.text else ""
+
         self._update_visibility_for_problem_type()
 
     def _reset_to_defaults(self) -> None:
@@ -506,6 +561,7 @@ class GeneralSettings(QWidget):
         self.f1_max_field.text = ""
         self.f2_min_field.text = ""
         self.f2_max_field.text = ""
+        self.num_inner_iterations_field.text = ""
         self._update_visibility_for_problem_type()
 
     def _on_problem_name_changed(self, text: str) -> None:

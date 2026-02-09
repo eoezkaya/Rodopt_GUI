@@ -546,6 +546,10 @@ class Study(QWidget):
         par.paramInfoChanged.connect(lambda n, names: _push_param_info(n, names))
         _push_param_info()  # initial push
 
+        # NEW: set default inner iterations = 10000 * number of parameters
+        par.paramInfoChanged.connect(lambda n, _names: gs.set_num_parameters(n))
+        gs.set_num_parameters(par.row_count())
+
     def to_xml(self, *, root_tag: str = "optimization_study") -> ET.Element:
         root = ET.Element(root_tag)
         for w in self._widgets.values():
