@@ -6,5 +6,5 @@ Tests/*
 dist/*
 build/*
 *.spec
-
+__pycache__/*
 

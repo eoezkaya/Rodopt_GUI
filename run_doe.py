@@ -17,6 +17,7 @@ from plot_history_2d import plot_history_2d  # NEW
 from plot_pareto_front import plot_pareto_front  # NEW
 import subprocess  # NEW
 import platform  # NEW
+from log_display_window import LogDisplayWindow  # NEW
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -580,47 +581,35 @@ class RunDoE(QWidget):
             QMessageBox.critical(self, "Plot Error", f"Failed to plot Pareto front:\n{e}")
 
     def _on_show_process_status_clicked(self):
-        """Open a dialog showing the contents of the latest *_process_pool.log file in the run directory."""
+        """Open a dialog showing the contents of the latest process.log file in the run directory."""
         run_dir = self.run_dir_field.path.strip()
         if not run_dir or not os.path.isdir(run_dir):
             QMessageBox.warning(self, "No Run Directory", "Run directory not found.")
             return
 
-        # Find latest *_process_pool.log file
-        log_files = [f for f in os.listdir(run_dir) if f.endswith("_process_pool.log")]
+        # Find latest process.log file
+        log_files = [f for f in os.listdir(run_dir) if f.endswith("process.log")]
         if not log_files:
-            QMessageBox.information(self, "No Log File", "No *_process_pool.log file found in the run directory.")
+            QMessageBox.information(self, "No Log File", "No process.log file found in the run directory.")
             return
 
         # Pick the most recently modified one
         log_files_full = [os.path.join(run_dir, f) for f in log_files]
         latest_log = max(log_files_full, key=os.path.getmtime)
 
-        try:
-            with open(latest_log, "r", encoding="utf-8", errors="ignore") as f:
-                log_content = f.read().strip()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to read log file:\n{e}")
-            return
-
-        # Create dialog to show contents
-        dlg = QDialog(self)
-        dlg.setWindowTitle(f"Process Status — {os.path.basename(latest_log)}")
-        
-        screen = QApplication.primaryScreen().availableGeometry()
-        dlg.resize(int(screen.width() * 0.7), int(screen.height() * 0.7))
-
-        text_edit = QTextEdit()
-        text_edit.setReadOnly(True)
-        text_edit.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse |
-            Qt.TextInteractionFlag.TextSelectableByKeyboard
+        dlg = LogDisplayWindow(
+            file_path=latest_log,
+            title=f"Process Status — {os.path.basename(latest_log)}",
+            icon_dir=self.ICON_DIR,
+            parent=self,
+            min_size=(1100, 700),
         )
-        text_edit.setPlainText(log_content)
 
-        layout = QVBoxLayout(dlg)
-        layout.addWidget(text_edit)
-        dlg.setLayout(layout)
+#        # Make it wider (before exec)
+#        screen = QApplication.primaryScreen().availableGeometry()
+#        dlg.setMinimumWidth(1500)
+#        dlg.resize(max(1500, int(screen.width() * 0.85)), int(screen.height() * 0.7))
+
         dlg.exec()
 
     def _on_show_main_log_clicked(self) -> None:
