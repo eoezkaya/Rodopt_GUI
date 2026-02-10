@@ -156,6 +156,17 @@ def plot_pareto_front(csv_path: str, *, xml_path: str, title: Optional[str] = No
         px, py = zip(*[(p[0], p[1]) for p in pareto_points])
         plt.plot(px, py, color="green", marker="o", linewidth=2.5, label="Pareto Front")
 
+        # NEW: adjust axis ranges based on Pareto-optimal points
+        x_min, x_max = min(px), max(px)
+        y_min, y_max = min(py), max(py)
+
+        # add small padding (handles equal min/max)
+        x_pad = (x_max - x_min) * 0.05 if x_max != x_min else (abs(x_max) * 0.05 or 1.0)
+        y_pad = (y_max - y_min) * 0.05 if y_max != y_min else (abs(y_max) * 0.05 or 1.0)
+
+        ax.set_xlim(x_min - x_pad, x_max + x_pad)
+        ax.set_ylim(y_min - y_pad, y_max + y_pad)
+
         # CHANGED: annotate only Pareto-optimal sample IDs (green)
         for x, y, sid in pareto_points:
             plt.annotate(

@@ -249,6 +249,22 @@ class GeneralSettings(QWidget):
         except Exception:
             pass
 
+        # NEW: Number of threads
+        self.num_threads_field = StringField(
+            "Number of threads",
+            default="1",
+            label_width=label_width,
+            field_width=text_field_width,
+            parent=self.group_box,
+        )
+        self.num_threads_field.textChanged.connect(self._emit_changed)
+        try:
+            self.num_threads_field.textChanged.connect(
+                lambda _t: self._validate_numeric_field(self.num_threads_field)
+            )
+        except Exception:
+            pass
+
         # === Layout ===
         inner_layout = QVBoxLayout(self.group_box)
         inner_layout.setContentsMargins(16, 16, 16, 16)
@@ -260,6 +276,7 @@ class GeneralSettings(QWidget):
             self.num_params_field,
             self.num_samples_field,
             self.num_inner_iterations_field,  # NEW: place right after number_of_samples_field
+            self.num_threads_field,  # NEW: after inner iterations
             self.sampling_field,
             self.batch_size_field,
             self.working_dir_field,
@@ -470,6 +487,11 @@ class GeneralSettings(QWidget):
         if iters or include_empty:
             ET.SubElement(root, "number_of_inner_iterations").text = iters
 
+        # NEW
+        threads = (self.num_threads_field.text or "").strip()
+        if threads or include_empty:
+            ET.SubElement(root, "number_of_threads").text = threads
+
         return root
 
     def from_xml(self, element: ET.Element | None) -> None:
@@ -545,6 +567,10 @@ class GeneralSettings(QWidget):
         el = element.find("number_of_inner_iterations")
         self.num_inner_iterations_field.text = el.text.strip() if el is not None and el.text else ""
 
+        # NEW
+        el = element.find("number_of_threads")
+        self.num_threads_field.text = el.text.strip() if el is not None and el.text else "1"
+
         self._update_visibility_for_problem_type()
 
     def _reset_to_defaults(self) -> None:
@@ -562,6 +588,7 @@ class GeneralSettings(QWidget):
         self.f2_min_field.text = ""
         self.f2_max_field.text = ""
         self.num_inner_iterations_field.text = ""
+        self.num_threads_field.text = "1"
         self._update_visibility_for_problem_type()
 
     def _on_problem_name_changed(self, text: str) -> None:
