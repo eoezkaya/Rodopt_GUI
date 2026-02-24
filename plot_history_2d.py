@@ -3,6 +3,7 @@ import os
 from typing import Sequence, Optional
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 
 
 def _find_col(headers: Sequence[str], candidates: Sequence[str]) -> int:
@@ -50,7 +51,9 @@ def _is_feasible(v: str) -> bool:
         return False
 
 
-def plot_history_2d(csv_path: str, d: int, *, title: Optional[str] = None) -> None:
+def plot_history_2d(csv_path: str, d: int, *, title: Optional[str] = None, num_doe_samples: int = 0) -> None:
+
+    print(f"Plotting history from {csv_path} with d={d} input variables and num_doe_samples={num_doe_samples} DOE samples...")
     """
     Plot best-feasible objective improvements vs sample ID.
 
@@ -106,26 +109,58 @@ def plot_history_2d(csv_path: str, d: int, *, title: Optional[str] = None) -> No
     if not ys:
         raise ValueError("No feasible samples with numeric objective values found.")
 
-    plt.figure(figsize=(10, 8))
+    # NEW: anchor at num_doe_samples with best value up to that point (display only)
+    try:
+        nds = int(num_doe_samples)
+    except Exception:
+        nds = 0
+    if nds < 0:
+        nds = 0
 
-    plt.plot(xs, ys, linewidth=2.0, marker="o", markersize=8)
+    if nds > 0:
+        # find y corresponding to the best improvement point with x <= nds
+        anchor_y: Optional[float] = None
+        for x, y in zip(xs, ys):
+            if x <= nds:
+                anchor_y = y
+            else:
+                break
+
+        # If we have any feasible best up to nds, start plot at (nds, anchor_y)
+        if anchor_y is not None:
+            # only add anchor if it isn't already exactly at x=nds
+            if not xs or xs[0] != nds or ys[0] != anchor_y:
+                xs_plot = [nds] + [x for x in xs if x >= nds]
+                ys_plot = [anchor_y] + [y for x, y in zip(xs, ys) if x >= nds]
+            else:
+                xs_plot = xs
+                ys_plot = ys
+        else:
+            # no feasible improvements before/at nds -> just show points >= nds
+            xs_plot = [x for x in xs if x >= nds]
+            ys_plot = [y for x, y in zip(xs, ys) if x >= nds]
+    else:
+        xs_plot = xs
+        ys_plot = ys
+
+    if not ys_plot:
+        raise ValueError("No points to plot in the selected x-range.")
+
+    plt.figure(figsize=(10, 8))
+    plt.plot(xs_plot, ys_plot, linewidth=2.0, marker="o", markersize=8)
 
     ax = plt.gca()
     plt.tight_layout()
 
-    # NEW: avoid clutter — if points are too close, annotate only the better (lower y)
-    # threshold in pixels
+    # --- existing annotation logic, but use xs_plot/ys_plot ---
     min_sep_px = 18.0
-
     last_annot_xy_disp = None
     last_annot = None
     last_annot_y = None
 
-    # need a draw so transforms are valid
     ax.figure.canvas.draw()
 
-    for x, y in zip(xs, ys):
-        # display coords (pixels)
+    for x, y in zip(xs_plot, ys_plot):
         xy_disp = ax.transData.transform((x, y))
 
         if last_annot_xy_disp is not None:
@@ -134,16 +169,12 @@ def plot_history_2d(csv_path: str, d: int, *, title: Optional[str] = None) -> No
             dist2 = dx * dx + dy * dy
 
             if dist2 < (min_sep_px * min_sep_px):
-                # points too close: keep only the better (lower objective)
-                # since these are improvements, the later point is always <= previous best,
-                # but handle defensively anyway.
                 if last_annot is not None and last_annot_y is not None and y <= last_annot_y:
                     last_annot.remove()
                     last_annot = None
                     last_annot_xy_disp = None
                     last_annot_y = None
                 else:
-                    # current is not better -> skip annotating current
                     continue
 
         last_annot = ax.annotate(
@@ -161,5 +192,24 @@ def plot_history_2d(csv_path: str, d: int, *, title: Optional[str] = None) -> No
     plt.ylabel(headers[obj_col].strip() if obj_col < len(headers) else "Objective value")
     plt.title(title or "Best feasible objective vs Sample ID")
     plt.grid(True, linestyle="--", alpha=0.4)
+
+    # NEW: view window starts at num_doe_samples when provided
+    if nds > 0:
+        right = max(xs_plot) if xs_plot else nds + 1
+        if right <= nds:
+            right = nds + 1
+        ax.set_xlim(nds, right)
+
+    # Force integer x-axis ticks/labels (no 100.0, 101.0, ...)
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    # Show x-axis with a small buffer around plotted points
+    if xs_plot:
+        left = max(0, int(min(xs_plot)) - 1)
+        right = int(max(xs_plot)) + 1
+        if right <= left:
+            right = left + 1
+        ax.set_xlim(left, right)
+
     plt.tight_layout()
     plt.show()

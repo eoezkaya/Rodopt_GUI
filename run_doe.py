@@ -18,6 +18,7 @@ from plot_pareto_front import plot_pareto_front  # NEW
 import subprocess  # NEW
 import platform  # NEW
 from log_display_window import LogDisplayWindow  # NEW
+import re  # NEW
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -67,6 +68,9 @@ class RunDoE(QWidget):
         self.last_exec_path = load_executable()
 
         self._caffeinate_proc: subprocess.Popen | None = None  # NEW
+
+        # NEW: initial DoE sample count (set once from the first displayed number in the table)
+        self.num_doe_samples: Optional[int] = None
 
         # ==========================================================
         # === Header ===
@@ -605,11 +609,6 @@ class RunDoE(QWidget):
             min_size=(1100, 700),
         )
 
-#        # Make it wider (before exec)
-#        screen = QApplication.primaryScreen().availableGeometry()
-#        dlg.setMinimumWidth(1500)
-#        dlg.resize(max(1500, int(screen.width() * 0.85)), int(screen.height() * 0.7))
-
         dlg.exec()
 
     def _on_show_main_log_clicked(self) -> None:
@@ -698,7 +697,48 @@ class RunDoE(QWidget):
             state=self.state,
         )
 
-    
+        # capture DoE sample count from optimization.log (in run directory)
+        self._try_capture_num_doe_samples()
+
+    def _try_capture_num_doe_samples(self) -> int:
+        """
+        Read DoE sample count from <run_dir>/optimization.log and store it in self.num_doe_samples.
+
+        Expected line example:
+          Number of training samples for the objective function: 100
+
+        If the run dir/log file/line is missing, sets self.num_doe_samples = 0.
+        Returns the captured (or defaulted) value.
+        """
+        run_dir = (self.run_dir_field.path or "").strip()
+        if not run_dir or not os.path.isdir(run_dir):
+            self.num_doe_samples = 0
+            return 0
+
+        log_path = os.path.join(run_dir, "optimization.log")
+        if not os.path.isfile(log_path):
+            self.num_doe_samples = 0
+            return 0
+
+        pattern = re.compile(
+            r"Number of training samples for the objective function\s*:\s*(\d+)",
+            re.IGNORECASE,
+        )
+
+        value = 0
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    m = pattern.search(line)
+                    if m:
+                        value = int(m.group(1))
+                        break
+        except Exception:
+            value = 0
+
+        self.num_doe_samples = value
+        return value
+
     def _is_float(self, s: str) -> bool:
         try:
             float(s)
@@ -871,7 +911,6 @@ class RunDoE(QWidget):
 
         csv_path = os.path.join(run_dir, "history.csv")
         if not os.path.isfile(csv_path):
-            # fallback to DoE_history.csv if that’s what exists in this run folder
             alt = os.path.join(run_dir, "DoE_history.csv")
             if os.path.isfile(alt):
                 csv_path = alt
@@ -880,7 +919,6 @@ class RunDoE(QWidget):
                 return
 
         try:
-            # NEW: determine d from study XML <dimension>
             if not getattr(self, "_xml_path", None) or not os.path.isfile(self._xml_path):
                 raise ValueError("Study XML path not set.")
 
@@ -893,7 +931,13 @@ class RunDoE(QWidget):
             if d <= 0:
                 raise ValueError("<dimension> must be a positive integer.")
 
-            plot_history_2d(csv_path, d, title="Best feasible objective vs Sample ID")
+           
+            plot_history_2d(
+                csv_path,
+                d,
+                title="Best feasible objective vs Sample ID",
+                num_doe_samples=self.num_doe_samples,
+            )
         except Exception as e:
             QMessageBox.critical(self, "Plot Error", f"Failed to plot optimization history:\n{e}")
 
