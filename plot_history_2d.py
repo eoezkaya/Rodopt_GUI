@@ -53,7 +53,6 @@ def _is_feasible(v: str) -> bool:
 
 def plot_history_2d(csv_path: str, d: int, *, title: Optional[str] = None, num_doe_samples: int = 0) -> None:
 
-    print(f"Plotting history from {csv_path} with d={d} input variables and num_doe_samples={num_doe_samples} DOE samples...")
     """
     Plot best-feasible objective improvements vs sample ID.
 
@@ -160,7 +159,7 @@ def plot_history_2d(csv_path: str, d: int, *, title: Optional[str] = None, num_d
 
     ax.figure.canvas.draw()
 
-    for x, y in zip(xs_plot, ys_plot):
+    for idx, (x, y) in enumerate(zip(xs_plot, ys_plot)):
         xy_disp = ax.transData.transform((x, y))
 
         if last_annot_xy_disp is not None:
@@ -177,12 +176,15 @@ def plot_history_2d(csv_path: str, d: int, *, title: Optional[str] = None, num_d
                 else:
                     continue
 
+        x_label = "DoE best" if (idx == 0 and nds > 0 and x == nds) else str(int(x))
+
         last_annot = ax.annotate(
-            f"{x}\n{y:.6g}",
+            f"{x_label}\n{y:.6g}",
             (x, y),
             textcoords="offset points",
-            xytext=(0, 6),
-            ha="center",
+            xytext=(4, 4),   # top-right of the marker
+            ha="left",
+            va="bottom",
             fontsize=7,
         )
         last_annot_xy_disp = xy_disp

@@ -93,14 +93,6 @@ class RunDoE(QWidget):
         self.btn_run.setToolTip("Run the study")
         self.btn_run.clicked.connect(self._on_run_clicked)
 
-        self.btn_pause = QToolButton()
-        self.btn_pause.setIcon(QIcon(str(self.ICON_DIR / "pause.svg")))
-        self.btn_pause.setIconSize(icon_size)
-        self.btn_pause.setAutoRaise(True)
-        self.btn_pause.setFixedSize(button_size + 6, button_size + 6)
-        self.btn_pause.setToolTip("Pause the study")
-        self.btn_pause.clicked.connect(self._on_pause_clicked)
-
         self.btn_stop = QToolButton()
         self.btn_stop.setIcon(QIcon(str(self.ICON_DIR / "stop.svg")))
         self.btn_stop.setIconSize(icon_size)
@@ -161,7 +153,6 @@ class RunDoE(QWidget):
         header_layout.addWidget(self.status_label)
         header_layout.addStretch(1)
         header_layout.addWidget(self.btn_run)
-        header_layout.addWidget(self.btn_pause)
         header_layout.addWidget(self.btn_stop)
         header_layout.addWidget(self.btn_plot)
         header_layout.addWidget(self.btn_plot_2d)  # NEW: next to Pareto
@@ -313,42 +304,18 @@ class RunDoE(QWidget):
             pass
 
     def _on_run_clicked(self):
-        # Determine whether this is a resume or a fresh start
-        was_paused = (getattr(self, "state", "") == "paused")
-
-        # If process is stopped (fresh start), clear the table
-        if not was_paused:
-            try:
-                self.table.setRowCount(0)
-                self.table.clearContents()
-            except Exception:
-                pass
-            # also reset CSV updater cache so new run's CSV is picked up immediately
-            try:
-                if hasattr(self, "_csv_updater") and self._csv_updater is not None:
-                    self._csv_updater._last_mtime = 0.0
-            except Exception:
-                pass
-
-        """Start or resume the DoE process."""
-        # --- Resume case ---
-        if self.state == "paused" and self.process:
-            try:
-                pid = self.process.processId()
-                if pid:
-                    os.kill(pid, signal.SIGCONT)
-                    self.state = "running"
-                    self._status_timer.start()
-                    if self.pause_start_time:
-                        self.paused_duration += time.time() - self.pause_start_time
-                        self.pause_start_time = None
-                    self._update_status_indicator("green", "Running (resumed)")
-                    self.btn_pause.setEnabled(True)
-                    self.btn_run.setEnabled(False)
-                    return
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to resume process:\n{e}")
-                return
+        """Start the DoE process."""
+        # Always treat as a start. Clear table for a fresh run.
+        try:
+            self.table.setRowCount(0)
+            self.table.clearContents()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "_csv_updater") and self._csv_updater is not None:
+                self._csv_updater._last_mtime = 0.0
+        except Exception:
+            pass
 
         # --- Already running? ---
         if self.state == "running" and self.process and \
@@ -360,15 +327,12 @@ class RunDoE(QWidget):
         exec_path = self.exec_field.path.strip()
         xml_path = self._xml_path
 
-
-
         if not exec_path or not os.path.isfile(exec_path):
             QMessageBox.critical(self, "Executable not found", "Please select a valid executable.")
             return
 
         save_executable(exec_path)
 
-        
         if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
             self.process.kill()
             self.process.waitForFinished(1000)
@@ -390,32 +354,9 @@ class RunDoE(QWidget):
         self.pause_start_time = None
         self.state = "running"
         self.btn_run.setEnabled(False)
-        self.btn_pause.setEnabled(True)
         self._status_timer.start()
         self._update_status_indicator("green", "Running (0s)")
         QTimer.singleShot(1500, self._update_run_directory)
-
-
-    def _on_pause_clicked(self):
-        """Pause the currently running DoE process."""
-        if not self.process or self.process.state() != QProcess.ProcessState.Running:
-            QMessageBox.information(self, "Not Running", "No active DoE process to pause.")
-            return
-
-        try:
-            pid = self.process.processId()
-            if pid:
-                os.kill(pid, signal.SIGSTOP)  # Pause the process
-                self.state = "paused"
-                self.pause_start_time = time.time()
-                self._status_timer.stop()
-                self._update_status_indicator("yellow", "Paused")
-                self.btn_pause.setEnabled(False)
-                self.btn_run.setEnabled(True)
-                self._keep_awake_stop()  # NEW
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to pause process:\n{e}")
-
 
     def _check_process_status(self):
         """Periodically check process state and update UI accordingly."""
@@ -426,10 +367,6 @@ class RunDoE(QWidget):
                 self._update_status_indicator("red", "Stopped")
             return
 
-        # --- do not override manually paused state ---
-        if self.state == "paused":
-            return
-
         state = self.process.state()
         if state == QProcess.ProcessState.NotRunning:
             if self.state != "stopped":
@@ -437,14 +374,10 @@ class RunDoE(QWidget):
                 self.paused_duration = 0.0
                 self._update_status_indicator("red", "Stopped")
                 self.btn_run.setEnabled(True)
-                self.btn_pause.setEnabled(False)
                 self._keep_awake_stop()  # NEW
         elif state == QProcess.ProcessState.Running and self.start_time:
             elapsed = int(time.time() - self.start_time - getattr(self, "paused_duration", 0.0))
             self._update_status_indicator("green", f"Running ({self._format_elapsed(elapsed)})")
-    
-    
-
 
     def _on_stop_clicked(self):
         if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
