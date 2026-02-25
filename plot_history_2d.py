@@ -2,8 +2,21 @@ import csv
 import os
 from typing import Sequence, Optional
 
+# --- NEW: make matplotlib work in PyInstaller ---
+import matplotlib
+try:
+    # Preferred in a PyQt6 app
+    matplotlib.use("QtAgg", force=True)
+except Exception:
+    # Safe fallback for frozen apps (no GUI backend)
+    matplotlib.use("Agg", force=True)
+
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
+
+# --- NEW: only used for the Agg fallback to open saved images on macOS ---
+import platform
+import subprocess
 
 
 def _find_col(headers: Sequence[str], candidates: Sequence[str]) -> int:
@@ -214,4 +227,27 @@ def plot_history_2d(csv_path: str, d: int, *, title: Optional[str] = None, num_d
         ax.set_xlim(left, right)
 
     plt.tight_layout()
-    plt.show()
+
+    # --- NEW: robust show() for frozen builds ---
+    backend = (matplotlib.get_backend() or "").lower()
+    is_gui_backend = any(k in backend for k in ("qt", "macosx", "tk", "wx", "gtk"))
+
+    if is_gui_backend:
+        plt.show()
+        return
+
+    # Non-GUI backend (Agg): save plot next to CSV and open it (macOS)
+    out_dir = os.path.dirname(os.path.abspath(csv_path))
+    safe_title = (title or "history").strip().replace(os.sep, "_")
+    out_path = os.path.join(out_dir, f"{safe_title}.png")
+
+    try:
+        plt.savefig(out_path, dpi=200)
+    finally:
+        plt.close()
+
+    if platform.system() == "Darwin":
+        try:
+            subprocess.Popen(["open", out_path])
+        except Exception:
+            pass

@@ -12,6 +12,7 @@ from xml.etree import ElementTree as ET
 import xml.dom.minidom as minidom
 import sys
 import os
+from pathlib import Path
 
 from general_settings_widget import GeneralSettings
 from objective_function_widget import ObjectiveFunction
@@ -31,6 +32,21 @@ class Study(QWidget):
       - passes XML path directly to RunDoE
       - displays current XML filename + dirty state
     """
+
+    @staticmethod
+    def _resource_base_dir() -> Path:
+        """
+        Return base directory for bundled resources.
+
+        - Dev: directory of this file
+        - PyInstaller: sys._MEIPASS temporary extraction dir
+        """
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            return Path(meipass)
+        return Path(__file__).resolve().parent
+
+    ICON_DIR = _resource_base_dir.__func__() / "images"
 
     CORE_TABS = ("General Settings", "Parameters")
 
@@ -98,9 +114,9 @@ class Study(QWidget):
         # ------------------------------------------------------------
         icon_size = QSize(button_size, button_size)
 
-        def _btn(text, icon, cb):
+        def _btn(text, icon_name: str, cb):
             b = QToolButton(text=text)
-            b.setIcon(QIcon(icon))
+            b.setIcon(QIcon(str(self.ICON_DIR / icon_name)))
             b.setIconSize(icon_size)
             b.setToolButtonStyle(
                 Qt.ToolButtonStyle.ToolButtonTextUnderIcon
@@ -109,13 +125,13 @@ class Study(QWidget):
             return b
 
         buttons = [
-            _btn("Save XML", "images/save_as.svg", self._save_to_file),
-            _btn("Load XML", "images/file_load.svg", self._load_from_file),
-            _btn("New Study", "images/new_window.svg", self._new_study),
-            _btn("Add Objective", "images/objective.svg", self._add_objective_tab),
-            _btn("Add Constraint", "images/constraint.svg", self._add_constraint_tab),
-            _btn("Run", "images/run.svg", self._run_doe),
-            _btn("Exit", "images/exit.svg", self._exit_app),
+            _btn("Save XML", "save_as.svg", self._save_to_file),
+            _btn("Load XML", "file_load.svg", self._load_from_file),
+            _btn("New Study", "new_window.svg", self._new_study),
+            _btn("Add Objective", "objective.svg", self._add_objective_tab),
+            _btn("Add Constraint", "constraint.svg", self._add_constraint_tab),
+            _btn("Run", "run.svg", self._run_doe),
+            _btn("Exit", "exit.svg", self._exit_app),
         ]
 
         max_w = max(b.sizeHint().width() for b in buttons)

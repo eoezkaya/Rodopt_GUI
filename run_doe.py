@@ -9,6 +9,7 @@ import csv
 from pathlib import Path
 import matplotlib.pyplot as plt 
 import xml.etree.ElementTree as ET
+import sys  # NEW
 from PyQt6.QtGui import QPixmap, QTransform, QIcon, QTextCursor, QColor, QPainter  # UPDATED
 from csv_table_updater import CSVTableUpdater
 from config_store import load_executable
@@ -45,7 +46,20 @@ from file_path_field import FilePathField
 
 
 class RunDoE(QWidget):
-    ICON_DIR = Path(__file__).resolve().parent / "images"
+    @staticmethod
+    def _resource_base_dir() -> Path:
+        """
+        Return base directory for bundled resources.
+
+        - Dev: directory of this file
+        - PyInstaller: sys._MEIPASS temporary extraction dir
+        """
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            return Path(meipass)
+        return Path(__file__).resolve().parent
+
+    ICON_DIR = _resource_base_dir.__func__() / "images"
 
     def __init__(
         self,
@@ -677,7 +691,7 @@ class RunDoE(QWidget):
             float(s)
             return True
         except Exception:
-            return False
+            False
     
   
     def _on_table_row_clicked(self, row: int, col: int) -> None:
